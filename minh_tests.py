@@ -1,9 +1,6 @@
-# adding stuff
 
-# CHANGE
 import minh
 import numpy as np
-import matplotlib.pyplot as plt
 import math
 
 """
@@ -15,8 +12,9 @@ import math
 """
 L = 125
 mass = 1
+
 def main():
-    x, y, z, mvir, rvir, id, upid, b_to_a, c_to_a = get_file_data()
+    x, y, z, mvir, rvir, id, upid = get_large_file_data()
     host_index, host_radius, host_unique_id, host_upid, host_mass = \
         host_halo(id, upid, rvir, mvir)
     sub_x, sub_y, sub_z = get_halo_distances(host_index, host_radius,
@@ -24,20 +22,24 @@ def main():
     a_len, b_len, c_len = get_axes(sub_x, sub_y, sub_z)
     c_a_ratio = c_len / a_len
     b_a_ratio = b_len / a_len
-    print('Axis ratio c:a is '+str(c_a_ratio))
-    print('Axis ratio b:a is '+str(b_a_ratio))
-    correlation(c_to_a, b_to_a, host_index, a_len, b_len, c_len)
+    sub_x2, sub_y2, sub_z2 = get_small_file_data(host_index)
+    a_len2, b_len2, c_len2 = get_axes(sub_x2, sub_y2, sub_z2)
+    c_a_ratio2 = c_len2 / a_len2
+    b_a_ratio2 = b_len2 / a_len2
+    print('Full Simulation, c:a is '+str(c_a_ratio))
+    print('Full Simulation, b:a is '+str(b_a_ratio))
+    print('Partial Simulation, c:a is ' + str(c_a_ratio2))
+    print('Partial Simulation, b:a is ' + str(b_a_ratio2))
 
 
-def get_file_data():
+def get_large_file_data():
     """
     comment
     """
     f=minh.open('hlist_1.00000.minh')
-    x, y, z, mvir, rvir, id, upid, b_to_a, c_to_a = f.read(['x','y','z',
-                            'mvir','rvir','id','upid','b_to_a','c_to_a'])
-    print(len(x), len(mvir), len(rvir), len(b_to_a))  #all outputs = 672778
-    return x, y, z, mvir, rvir, id, upid, b_to_a, c_to_a
+    x, y, z, mvir, rvir, id, upid = f.read(['x','y','z','mvir','rvir','id','upid'])
+    return x, y, z, mvir, rvir, id, upid
+
 
 
 def host_halo(id, upid, rvir, mvir):
@@ -54,6 +56,25 @@ def host_halo(id, upid, rvir, mvir):
     return host_index, host_radius, host_unique_id, host_upid, host_mass
 
 
+def get_small_file_data(host_index):
+    array = np.loadtxt('halo_data.txt', usecols=(0, 8, 9, 10)).T
+    all_ids = array[0]
+    x_arr = array[1]
+    y_arr = array[2]
+    z_arr = array[3]
+    subhalo_indices = np.where(host_index == all_ids)
+    sub_x2 = x_arr[subhalo_indices]
+    sub_y2 = y_arr[subhalo_indices]
+    sub_z2 = z_arr[subhalo_indices]
+    host_x = sub_x2[0]
+    host_y = sub_y2[0]
+    host_z = sub_z2[0]
+    sub_x2 = sub_x2[1:] - host_x
+    sub_y2 = sub_y2[1:] - host_y
+    sub_z2 = sub_z2[1:] - host_z
+    sub_x2, sub_y2, sub_z2 = check_boundary(sub_x2, sub_y2, sub_z2)
+    return sub_x2, sub_y2, sub_z2
+
 
 def find_subhaloes(host_index, host_radius, id, upid, distance):
     subhaloes = np.where(distance*1000 <= host_radius)
@@ -65,7 +86,6 @@ def find_subhaloes(host_index, host_radius, id, upid, distance):
     return subhaloes
 
 
-### L is still 125 for large simulation
 def check_boundary(x, y, z):
     """
     Using the halo displacement matrices for x,y,z
@@ -83,7 +103,7 @@ def check_boundary(x, y, z):
         too_small = np.where(position < (-L/2))
         position[too_big] -= L
         position[too_small] += L
-    return  x, y, z
+    return x, y, z
 
 
 def get_halo_distances(host_index, host_radius, id, upid, x, y, z):
@@ -102,7 +122,6 @@ def get_halo_distances(host_index, host_radius, id, upid, x, y, z):
     sub_y = y[subhaloes]
     sub_z = z[subhaloes]
     return sub_x, sub_y, sub_z
-
 
 
 def make_inertia_tensor():
@@ -191,54 +210,6 @@ def get_axes(x_arr, y_arr, z_arr):
     axis_a_length, axis_b_length, axis_c_length = convert_to_length(
         evalues)
     return axis_a_length, axis_b_length, axis_c_length
-
-
-def correlation(c_to_a, b_to_a, host_index, a_len, b_len, c_len):
-    """
-    Between my code's axis ratio outputs and the simulation's data.
-    """
-    expected_ca = c_to_a[host_index]
-    expected_ba = b_to_a[host_index]
-    fig, (ax1, ax2) = plt.subplots(2, 1, dpi=100)
-    fig.suptitle('Axis Ratio Correlations with Subhalo Abundance')
-    ax1.set_title('c:a Axis Ratio')
-    ax2.set_title('b:a Axis Ratio')
-    ax2.set_xlabel(r'$log(N_{sh})$')
-    ax1.set_ylabel('Mean Fractional Error')
-    ax2.set_ylabel('Mean Fractional Error')
-    N_list = np.logspace(1, 4, num=50, endpoint=True, base=10.0,
-                         dtype=int, axis=0).tolist()
-    num_N = int(input('How many N iterations? '))
-    error_ca_arr = np.zeros(len(N_list))
-    error_ba_arr = np.zeros(len(N_list))
-    for i in range(num_N):
-        error_ca_list = []
-        error_ba_list = []
-        for N in N_list:
-            measured_ca = c_len / a_len
-            measured_ba = b_len / a_len
-            error_ca_list.append(np.absolute((measured_ca - expected_ca))
-                                 / expected_ca)
-            error_ba_list.append(np.absolute((measured_ba - expected_ba))
-                                 / expected_ba)
-        error_ca_arr += np.asarray(error_ca_list)
-        error_ba_arr += np.asarray(error_ba_list)
-
-    """
-    print out axis ratios, no need to plot
-    simplify block of code above
-    """
-
-    error_ca_arr /= num_N
-    error_ba_arr /= num_N
-    ax1.plot(N_list, error_ca_arr, '.r-', markersize=1.5, linewidth=0.5)
-    ax2.plot(N_list, error_ba_arr, '.b-', markersize=1.5, linewidth=0.5)
-    ax1.set_xscale('log')
-    ax1.set_yscale('log')
-    ax2.set_xscale('log')
-    ax2.set_yscale('log')
-    plt.tight_layout()
-    plt.show()
 
 
 if __name__ == '__main__':
