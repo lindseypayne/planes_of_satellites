@@ -1,4 +1,5 @@
 # adding stuff
+# again
 import minh
 import numpy as np
 import matplotlib.pyplot as plt
@@ -221,6 +222,12 @@ def correlation(c_to_a, b_to_a, host_index, a_len, b_len, c_len):
                                  / expected_ba)
         error_ca_arr += np.asarray(error_ca_list)
         error_ba_arr += np.asarray(error_ba_list)
+
+    """
+    print out axis ratios, no need to plot
+    simplify block of code above
+    """
+
     error_ca_arr /= num_N
     error_ba_arr /= num_N
     ax1.plot(N_list, error_ca_arr, '.r-', markersize=1.5, linewidth=0.5)
