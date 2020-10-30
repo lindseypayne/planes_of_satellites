@@ -21,17 +21,9 @@ def get_file_data():
     x, y, z, mvir, rvir, id, upid = f.read(['x', 'y', 'z', 'mvir', 'rvir', 'id', 'upid'])
     return f, x, y, z, mvir, rvir, id, upid
 
-# ddim = ndim / ndim_avg
-    # ndim_avg = all objects in simulation
-    # ndim = all objects in 8 Mpc sphere around host
-        # hosts are of same mass range as last coding exercise???
-# dbright = nbright / nbright_avg
-    # m >= 5e11 solar masses/h
-# find axis ratios using NEIGHBORS in 8 Mpc, not subhaloes
 
 def find_hosts(mvir, upid):
-    """
-    find objects with mass of 10e13 Msun/h that are NOT subhaloes
+    """Find objects with mass of 10e13 Msun/h that are NOT subhaloes
     """
     target_ids = np.where((mvir >= 1e13) & (upid == -1))
     host_masses = mvir[target_ids]
@@ -126,8 +118,7 @@ def convert_to_length(evalues):
 
 
 def get_axes(sub_dx, sub_dy, sub_dz):
-    """
-    Returns the axis lengths largest to smallest of the halo
+    """ Returns the axis lengths largest to smallest of the halo
     delineated as a,b,c.
     """
     empty_inertia_tensor = make_inertia_tensor()
@@ -142,7 +133,7 @@ def get_axes(sub_dx, sub_dy, sub_dz):
 
 
 def total_dim_bright(mvir):
-    """Find all of the dim and bright objects in the simulation.
+    """ Find all of the dim and bright objects in the simulation.
     We are using the fact that mass is proportional to luminosity,
     of the dark matter haloes and galaxies (dark matter is not
     itself luminescent.
@@ -153,7 +144,7 @@ def total_dim_bright(mvir):
 
 
 def find_neighbors(f, rvir, mvir, x, y, z, target_ids):
-    """Find dim and bright objects within 8Mpc sphere. Compute
+    """ Find dim and bright objects within 8Mpc sphere. Compute
     axis ratios for each host using objects, not limited to subhaloes.
     """
     total_dim, total_bright = total_dim_bright(mvir)
@@ -180,10 +171,11 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids):
         sub_idx = np.array(sub_idx, dtype=int)  # The index is a float by default, change.
         # Now we can use sub_idx to extract whatever subhalo properties we want
         sub_mvir = mvir[sub_idx]
-        #convert positions to displacements by subtracting out position of host
+        # Convert positions to displacements by subtracting out position of host
         sub_dx = sub_x - host_point[0]
         sub_dy = sub_y - host_point[1]
         sub_dz = sub_z - host_point[2]
+        # Computing axis ratios using neighbors, not necessarily subhaloes.
         c_a_ratio, b_a_ratio = get_axes(sub_dx, sub_dy, sub_dz)
         sub_mvir_list.append(sub_mvir)
         if len(sub_idx) >= 4:
@@ -197,6 +189,10 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids):
 
 
 def scatter(c_a_list, b_a_list, ddim_list, dbright_list):
+    """ Recreate 2-dimensional scatter plots from Maria's paper.
+    Comparing properties of host haloes in minh simulation;
+    axis ratios and luminosities.
+    """
     fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(7, 7), dpi=110, constrained_layout=True)
     fig.suptitle('Distributions of properties of Local Volume analogues in minh simulation')
     ax[0,0].set_xlabel(r'$\Delta_{dim}$')
