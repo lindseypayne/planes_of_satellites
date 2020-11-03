@@ -8,17 +8,23 @@ import matplotlib.patches as mpatches
 L = 125
 mass = 1
 R = 8    # 8 Mpc
+V_sim = 125**3
+V_sphere = (4*np.pi*(R**3)) / 3
 
 def main():
     f, x, y, z, mvir, rvir, id, upid = get_file_data()
     host_masses, target_ids = find_hosts(mvir, upid)
-    c_a_list, b_a_list, ddim_list, dbright_list = find_neighbors(f, rvir, mvir, x, y, z, target_ids)
-    scatter(c_a_list, b_a_list, ddim_list, dbright_list)
+    c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios\
+        = find_neighbors(f, rvir, mvir, x, y, z, target_ids)
+    scatter(c_a_list, b_a_list, ddim_list, dbright_list,
+            ddim_for_ratios)
 
 
 def get_file_data():
     f = minh.open('hlist_1.00000.minh')
-    x, y, z, mvir, rvir, id, upid = f.read(['x', 'y', 'z', 'mvir', 'rvir', 'id', 'upid'])
+    x, y, z, mvir, rvir, id, upid = f.read(['x', 'y', 'z',
+                                            'mvir', 'rvir',
+                                            'id', 'upid'])
     return f, x, y, z, mvir, rvir, id, upid
 
 
@@ -138,8 +144,9 @@ def total_dim_bright(mvir):
     of the dark matter haloes and galaxies (dark matter is not
     itself luminescent.
     """
-    total_dim = len(mvir)
-    total_bright = len(mvir[np.where(mvir >= 5e11)])
+    # number densities
+    total_dim = len(mvir) / V_sim
+    total_bright = len(mvir[np.where(mvir >= 5e11)]) / V_sim
     return total_dim, total_bright
 
 
@@ -163,6 +170,7 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids):
     c_a_list = []
     b_a_list = []
     ddim_list = []
+    ddim_for_ratios = []
     dbright_list = []
     for id in target_ids[0]:
         host_point = points[id]
@@ -178,17 +186,23 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids):
         # Computing axis ratios using neighbors, not necessarily subhaloes.
         c_a_ratio, b_a_ratio = get_axes(sub_dx, sub_dy, sub_dz)
         sub_mvir_list.append(sub_mvir)
+
         if len(sub_idx) >= 4:
             c_a_list.append(c_a_ratio)
             b_a_list.append(b_a_ratio)
-        ddim = len(sub_idx) / total_dim
-        dbright = len(sub_mvir[np.where(sub_mvir >= 5e11)]) / total_bright
+            ddim2 = (len(sub_idx) / V_sphere) / total_dim
+            ddim_for_ratios.append(ddim2)
+        # calculate with number densities
+        ddim = (len(sub_idx) / V_sphere) / total_dim
+        dbright = (len(sub_mvir[np.where(sub_mvir >= 5e11)]) / V_sphere) / total_bright
         ddim_list.append(ddim)
         dbright_list.append(dbright)
-    return c_a_list, b_a_list, ddim_list, dbright_list
+    # the same for this batch of hosts, meaning none have less than 4 subs
+    print(len(ddim_list), len(ddim_for_ratios))
+    return c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios
 
 
-def scatter(c_a_list, b_a_list, ddim_list, dbright_list):
+def scatter(c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios):
     """ Recreate 2-dimensional scatter plots from Maria's paper.
     Comparing properties of host haloes in minh simulation;
     axis ratios and luminosities.
@@ -204,8 +218,8 @@ def scatter(c_a_list, b_a_list, ddim_list, dbright_list):
     ax[1,1].set_xlabel(r'$(b/a)_{8Mpc}$')
     ax[1,1].set_ylabel(r'$(c/a)_{8Mpc}$')
     ax[0,0].hist2d(ddim_list, dbright_list, bins=30, cmap='Greys')
-    ax[0,1].hist2d(ddim_list, b_a_list, bins=30, cmap='Greys')
-    ax[1,0].hist2d(ddim_list, c_a_list, bins=30, cmap='Greys')
+    ax[0,1].hist2d(ddim_for_ratios, b_a_list, bins=30, cmap='Greys')
+    ax[1,0].hist2d(ddim_for_ratios, c_a_list, bins=30, cmap='Greys')
     ax[1,1].hist2d(b_a_list, c_a_list, bins=30, cmap='Greys')
     comment = mpatches.Patch(edgecolor='black', facecolor='white', label=r'M$\propto$L')
     ax[0,0].legend(handles=[comment])
