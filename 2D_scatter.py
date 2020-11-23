@@ -4,34 +4,44 @@ import grid_tags
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from abundance_match import match_B
 
-L = 125
+L = 62.5    # Mpc/h
 mass = 1
-R = 8    # 8 Mpc
-V_sim = 125**3
+R = 8*0.7   # 8 Mpc/h
+V_sim = L**3
 V_sphere = (4*np.pi*(R**3)) / 3
+sigma = 0   # the scatter between halo mass and galaxy luminosity
 
 def main():
-    f, x, y, z, mvir, rvir, id, upid = get_file_data()
-    host_masses, target_ids = find_hosts(mvir, upid)
-    c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios\
-        = find_neighbors(f, rvir, mvir, x, y, z, target_ids)
-    scatter(c_a_list, b_a_list, ddim_list, dbright_list,
-            ddim_for_ratios)
+    f, x, y, z, mvir, rvir, id, upid, M_B = get_file_data()
+    host_masses, target_ids = find_hosts(mvir, upid, M_B)
+    c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios, \
+    c_a_Rvir, b_a_Rvir = find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B)
+    scatter(c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios)
+    plot(c_a_list, c_a_Rvir, ddim_for_ratios)
 
 
 def get_file_data():
-    f = minh.open('hlist_1.00000.minh')
-    x, y, z, mvir, rvir, id, upid = f.read(['x', 'y', 'z',
-                                            'mvir', 'rvir',
-                                            'id', 'upid'])
-    return f, x, y, z, mvir, rvir, id, upid
-
-
-def find_hosts(mvir, upid):
-    """Find objects with mass of 10e13 Msun/h that are NOT subhaloes
+    """ This function reads in data from a high resolution simulation
+    and computes the B-band magnitude (M_B) for each halo/subhalo.
     """
-    target_ids = np.where((mvir >= 1e13) & (upid == -1))
+    f = minh.open('L63_hlist_1.00000.minh')
+    x, y, z, mvir, rvir, id, upid, mpeak = f.read(['x', 'y', 'z',
+                                            'mvir', 'rvir',
+                                            'id', 'upid', 'mpeak'])
+    # mpeak: maximum mass a halo has ever had over the lifetime of the simulation
+    M_B = match_B(mpeak, sigma, mass_def="mpeak", LF="Neuzil", data_dir='.')
+    return f, x, y, z, mvir, rvir, id, upid, M_B
+
+
+# change to search via MAGNITUDES
+def find_hosts(mvir, upid, M_B):
+    """Find objects with mass of 10e13 Msun/h that are NOT subhaloes.
+
+    Now, Hosts should be in the magnitude range -21.25 < M_B < -20.5.
+    """
+    target_ids = np.where((-21.25 < M_B) & (M_B < -20.5) & (upid == -1))
     host_masses = mvir[target_ids]
     return host_masses, target_ids
 
@@ -138,23 +148,31 @@ def get_axes(sub_dx, sub_dy, sub_dz):
     return c_a_ratio, b_a_ratio
 
 
-def total_dim_bright(mvir):
-    """ Find all of the dim and bright objects in the simulation.
-    We are using the fact that mass is proportional to luminosity,
+def dim_bright_avgs(M_B):
+    """ Calculate the average number density of bright objects and
+    dim objects in the simulation.
+
+    We used the fact that mass is proportional to luminosity,
     of the dark matter haloes and galaxies (dark matter is not
     itself luminescent.
+
+    Now, find haloes from their B-band magnitudes, not masses.
     """
-    # number densities
-    total_dim = len(mvir) / V_sim
-    total_bright = len(mvir[np.where(mvir >= 5e11)]) / V_sim
-    return total_dim, total_bright
+    avg_bright = np.sum(M_B < -20.5) / V_sim
+    print('avg_bright ', avg_bright)
+    avg_dim = np.sum((-16 > M_B) & (M_B > -18)) / V_sim
+    print('avg_dim ', avg_dim)
+    return avg_dim, avg_bright
 
 
-def find_neighbors(f, rvir, mvir, x, y, z, target_ids):
+def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B):
     """ Find dim and bright objects within 8Mpc sphere. Compute
     axis ratios for each host using objects, not limited to subhaloes.
+
+    dbright calculated using only haloes with M_B < -20.5
+    ddim calculated from dim galaxies with -16 > M_B > -18.
     """
-    total_dim, total_bright = total_dim_bright(mvir)
+    avg_dim, avg_bright = dim_bright_avgs(M_B)
     # Convert rvir from kpc/h to Mpc/h.
     rvir /= 1e3
     # Initialize the grid by picking the number of cells (~50) works well
@@ -166,40 +184,54 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids):
     tags = np.arange(len(mvir))
     grid.populate_cells(points, tags)
     # Choose the halo we want to search around. Loop over hosts
-    sub_mvir_list = []
+    obj_mvir_list = []
     c_a_list = []
     b_a_list = []
     ddim_list = []
     ddim_for_ratios = []
     dbright_list = []
+    c_a_Rvir = []
+    b_a_Rvir = []
     for id in target_ids[0]:
         host_point = points[id]
+        host_Rvir = rvir[id]
         # Finally, search around the host! change host_rvir to search bubble of 8Mpc
-        sub_x, sub_y, sub_z, sub_idx = grid.retrieve_tagged_members(host_point, R).T
-        sub_idx = np.array(sub_idx, dtype=int)  # The index is a float by default, change.
+        obj_x, obj_y, obj_z, object_idx = grid.retrieve_tagged_members(host_point, R).T
+        object_idx = np.array(object_idx, dtype=int)  # The index is a float by default, change.
         # Now we can use sub_idx to extract whatever subhalo properties we want
-        sub_mvir = mvir[sub_idx]
+        obj_mvir = mvir[object_idx]
         # Convert positions to displacements by subtracting out position of host
+        obj_dx = obj_x - host_point[0]
+        obj_dy = obj_y - host_point[1]
+        obj_dz = obj_z - host_point[2]
+        # Computing axis ratios using neighbors, not necessarily subhalo
+        c_a_ratio, b_a_ratio = get_axes(obj_dx, obj_dy, obj_dz)
+        obj_mvir_list.append(obj_mvir)
+        M_B_sat = M_B[object_idx]
+        num_bright = len(np.where(M_B_sat < -20.5)[0])
+        num_dim = len(np.where((-16 > M_B_sat) & (M_B_sat > -18))[0])
+        if len(object_idx) >= 4:
+            c_a_list.append(c_a_ratio)
+            b_a_list.append(b_a_ratio)
+            ddim2 = (num_dim / V_sphere) / avg_dim
+            ddim_for_ratios.append(ddim2)
+        # Compute axis ratios using subhaloes in Rvir
+        sub_x, sub_y, sub_z, sub_idx = grid.retrieve_tagged_members(host_point, host_Rvir).T
+        sub_idx = np.array(sub_idx, dtype=int)
         sub_dx = sub_x - host_point[0]
         sub_dy = sub_y - host_point[1]
         sub_dz = sub_z - host_point[2]
-        # Computing axis ratios using neighbors, not necessarily subhaloes.
-        c_a_ratio, b_a_ratio = get_axes(sub_dx, sub_dy, sub_dz)
-        sub_mvir_list.append(sub_mvir)
-
+        c_a_rvir, b_a_rvir = get_axes(sub_dx, sub_dy, sub_dz)
         if len(sub_idx) >= 4:
-            c_a_list.append(c_a_ratio)
-            b_a_list.append(b_a_ratio)
-            ddim2 = (len(sub_idx) / V_sphere) / total_dim
-            ddim_for_ratios.append(ddim2)
+            c_a_Rvir.append(c_a_rvir)
+            b_a_Rvir.append(b_a_rvir)
         # calculate with number densities
-        ddim = (len(sub_idx) / V_sphere) / total_dim
-        dbright = (len(sub_mvir[np.where(sub_mvir >= 5e11)]) / V_sphere) / total_bright
+        ddim = (num_dim / V_sphere) / avg_dim
+        dbright = (num_bright / V_sphere) / avg_bright
         ddim_list.append(ddim)
         dbright_list.append(dbright)
     # the same for this batch of hosts, meaning none have less than 4 subs
-    print(len(ddim_list), len(ddim_for_ratios))
-    return c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios
+    return c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios, c_a_Rvir, b_a_Rvir
 
 
 def scatter(c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios):
@@ -217,6 +249,7 @@ def scatter(c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios):
     ax[1,0].set_ylabel(r'$(c/a)_{8Mpc}$')
     ax[1,1].set_xlabel(r'$(b/a)_{8Mpc}$')
     ax[1,1].set_ylabel(r'$(c/a)_{8Mpc}$')
+    # hist or scatter?
     ax[0,0].hist2d(ddim_list, dbright_list, bins=30, cmap='Greys')
     ax[0,1].hist2d(ddim_for_ratios, b_a_list, bins=30, cmap='Greys')
     ax[1,0].hist2d(ddim_for_ratios, c_a_list, bins=30, cmap='Greys')
@@ -225,6 +258,24 @@ def scatter(c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios):
     ax[0,0].legend(handles=[comment])
     plt.show()
 
+
+def plot(c_a_list, c_a_Rvir, ddim_for_ratios):
+    print(len(c_a_list))
+    print(len(c_a_Rvir))
+    print(len(ddim_for_ratios))
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(7, 7), dpi=100, tight_layout=True)
+    fig.suptitle('Distribution of satellite axis ratios in Different Environments')
+    ax[0,0].set_xlabel(r'$\Delta_{dim}_{8Mpc}$')
+    ax[0,0].set_ylabel(r'$(c/a)_{8Mpc}$')
+    ax[0,0].hist2d(ddim_for_ratios, c_a_list, bins=30, cmap='Greys')
+    # ddim of host environment on x
+    # c/a of host on y
+    # plot points c/a of sats
+    # make smallest 25% c/a sats red, rest blue
+
+    # How do I make arrays the same shape/length for ca_sats and ddim/ca_env??
+    # Confused how to input data into plotting functions
+    plt.show()
 
 if __name__ == '__main__':
     main()
