@@ -14,13 +14,13 @@ V_sphere = (4*np.pi*(R**3)) / 3
 sigma = 0   # the scatter between halo mass and galaxy luminosity
 
 def main():
-    f, x, y, z, mvir, rvir, id, upid, M_B = get_file_data()
+    f, x, y, z, mvir, rvir, id, upid, M_B, mpeak = get_file_data()
     host_masses, target_ids = find_hosts(mvir, upid, M_B)
-    c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios, \
-    c_a_Rvir, b_a_Rvir = find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B)
-    scatter(c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios)
-    plot(c_a_list, c_a_Rvir, ddim_for_ratios)
-
+    c_a_env, b_a_env, c_a_Rvir, b_a_Rvir, ddim_list, ddim_rvir_ratios, \
+    dbright_list, mpeak_list = find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak)
+    scatter(c_a_env, b_a_env, ddim_list, dbright_list)
+    trial_plots(c_a_env, c_a_Rvir, ddim_list, mpeak_list)
+    all_groups(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list)
 
 def get_file_data():
     """ This function reads in data from a high resolution simulation
@@ -32,9 +32,10 @@ def get_file_data():
                                             'id', 'upid', 'mpeak'])
     # mpeak: maximum mass a halo has ever had over the lifetime of the simulation
     M_B = match_B(mpeak, sigma, mass_def="mpeak", LF="Neuzil", data_dir='.')
-    return f, x, y, z, mvir, rvir, id, upid, M_B
+    return f, x, y, z, mvir, rvir, id, upid, M_B, mpeak
 
-
+# critical vs mean density: need for universe to not be curved vs. average in a given volume
+# density profile for DM halo: find a place where density drops below __x critical, mean density... that's the radius
 # change to search via MAGNITUDES
 def find_hosts(mvir, upid, M_B):
     """Find objects with mass of 10e13 Msun/h that are NOT subhaloes.
@@ -110,7 +111,7 @@ def compute_e_values(inertia_tensor):
     return evalues
 
 
-def convert_to_length(evalues):
+def convert_to_length(evalues, i):
     """
     This function converts the eigenvalues into physical lengths
     for our host halo axes, and thus our axis ratios.
@@ -126,14 +127,14 @@ def convert_to_length(evalues):
     Ia = evalues[0]
     Ib = evalues[1]
     Ic = evalues[2]
-    c = math.sqrt((1/2) * 5 * (1/mass) * (Ib - Ic + Ia))
+    c = ((1/2) * 5 * (1/mass) * (Ib - Ic + Ia))**(0.5)   # if evalues are too small, c b a are nan
     b = math.sqrt((5 * (1/mass) * Ia) - c**2)
     a = math.sqrt((5 * (1/mass) * (Ic - Ia)) + c**2)
     # shortcut!
     return np.flip(np.sort([a, b, c]))
 
 
-def get_axes(sub_dx, sub_dy, sub_dz):
+def get_axes(sub_dx, sub_dy, sub_dz, i):
     """ Returns the axis lengths largest to smallest of the halo
     delineated as a,b,c.
     """
@@ -142,11 +143,16 @@ def get_axes(sub_dx, sub_dy, sub_dz):
                                              sub_dx, sub_dy, sub_dz)
     evalues = compute_e_values(inertia_tensor)
     a_len, b_len, c_len = convert_to_length(
-        evalues)
+        evalues, i)
     c_a_ratio = c_len / a_len
     b_a_ratio = b_len / a_len
     return c_a_ratio, b_a_ratio
 
+def new_tensor():
+    # compare to other method
+
+def sub_angmom():
+    # compute angular velocities
 
 def dim_bright_avgs(M_B):
     """ Calculate the average number density of bright objects and
@@ -165,7 +171,7 @@ def dim_bright_avgs(M_B):
     return avg_dim, avg_bright
 
 
-def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B):
+def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak):
     """ Find dim and bright objects within 8Mpc sphere. Compute
     axis ratios for each host using objects, not limited to subhaloes.
 
@@ -184,57 +190,69 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B):
     tags = np.arange(len(mvir))
     grid.populate_cells(points, tags)
     # Choose the halo we want to search around. Loop over hosts
-    obj_mvir_list = []
-    c_a_list = []
-    b_a_list = []
+    c_a_env = []   # axis ratios of configurations, indicates flatness of environment/collection of halo galaxies
+    b_a_env = []
     ddim_list = []
-    ddim_for_ratios = []
+    ddim_rvir_ratios = []
     dbright_list = []
-    c_a_Rvir = []
+    c_a_Rvir = []     # axis ratios of individual host haloes, not environmental
     b_a_Rvir = []
+    mpeak_host_list = []
+    i = 0
     for id in target_ids[0]:
         host_point = points[id]
         host_Rvir = rvir[id]
         # Finally, search around the host! change host_rvir to search bubble of 8Mpc
         obj_x, obj_y, obj_z, object_idx = grid.retrieve_tagged_members(host_point, R).T
         object_idx = np.array(object_idx, dtype=int)  # The index is a float by default, change.
-        # Now we can use sub_idx to extract whatever subhalo properties we want
-        obj_mvir = mvir[object_idx]
         # Convert positions to displacements by subtracting out position of host
         obj_dx = obj_x - host_point[0]
         obj_dy = obj_y - host_point[1]
         obj_dz = obj_z - host_point[2]
         # Computing axis ratios using neighbors, not necessarily subhalo
-        c_a_ratio, b_a_ratio = get_axes(obj_dx, obj_dy, obj_dz)
-        obj_mvir_list.append(obj_mvir)
-        M_B_sat = M_B[object_idx]
-        num_bright = len(np.where(M_B_sat < -20.5)[0])
-        num_dim = len(np.where((-16 > M_B_sat) & (M_B_sat > -18))[0])
-        if len(object_idx) >= 4:
-            c_a_list.append(c_a_ratio)
-            b_a_list.append(b_a_ratio)
-            ddim2 = (num_dim / V_sphere) / avg_dim
-            ddim_for_ratios.append(ddim2)
-        # Compute axis ratios using subhaloes in Rvir
+        c_a_ratio, b_a_ratio = get_axes(obj_dx, obj_dy, obj_dz, i)
+
+        ### add new tensor method and print values to compare
+
+        # B magnitudes of each object around the host
+        M_B_obj = M_B[object_idx]
+        num_bright = len(np.where(M_B_obj < -20.5)[0])
+        num_dim = len(np.where((-16 > M_B_obj) & (M_B_obj > -18))[0])
+        # Compute axis ratios using subhaloes in Rvir around host
         sub_x, sub_y, sub_z, sub_idx = grid.retrieve_tagged_members(host_point, host_Rvir).T
         sub_idx = np.array(sub_idx, dtype=int)
         sub_dx = sub_x - host_point[0]
         sub_dy = sub_y - host_point[1]
         sub_dz = sub_z - host_point[2]
-        c_a_rvir, b_a_rvir = get_axes(sub_dx, sub_dy, sub_dz)
+        c_a_rvir, b_a_rvir = get_axes(sub_dx, sub_dy, sub_dz, i)
+
+        ### add new tensor method and print values to compare
+
+        M_B_sub = M_B[sub_idx]
+        mpeak_host = mpeak[id]
+        num_bright2 = len(np.where(M_B_sub < -20.5)[0])
+        num_dim2 = len(np.where((-16 > M_B_sub) & (M_B_sub > -18))[0])
+        # guarantees the data arrays are the same shape
         if len(sub_idx) >= 4:
             c_a_Rvir.append(c_a_rvir)
             b_a_Rvir.append(b_a_rvir)
-        # calculate with number densities
-        ddim = (num_dim / V_sphere) / avg_dim
-        dbright = (num_bright / V_sphere) / avg_bright
-        ddim_list.append(ddim)
-        dbright_list.append(dbright)
-    # the same for this batch of hosts, meaning none have less than 4 subs
-    return c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios, c_a_Rvir, b_a_Rvir
+            c_a_env.append(c_a_ratio)
+            b_a_env.append(b_a_ratio)
+            # calculate with number densities
+            ddim_rvir = (num_dim2 / V_sphere) / avg_dim
+            ddim_rvir_ratios.append(ddim_rvir)
+            ddim = (num_dim / V_sphere) / avg_dim
+            dbright = (num_bright / V_sphere) / avg_bright
+            ddim_list.append(ddim)
+            dbright_list.append(dbright)
+            #
+            mpeak_host_list.append(mpeak_host)
+
+        i +=1
+    return c_a_env, b_a_env, c_a_Rvir, b_a_Rvir, ddim_list, ddim_rvir_ratios, dbright_list, mpeak_host_list
 
 
-def scatter(c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios):
+def scatter(c_a_list, b_a_list, ddim_list, dbright_list):
     """ Recreate 2-dimensional scatter plots from Maria's paper.
     Comparing properties of host haloes in minh simulation;
     axis ratios and luminosities.
@@ -243,7 +261,7 @@ def scatter(c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios):
     fig.suptitle('Distributions of properties of Local Volume analogues in minh simulation')
     ax[0,0].set_xlabel(r'$\Delta_{dim}$')
     ax[0,0].set_ylabel(r'$\Delta_{bright}$')
-    ax[0,1].set_xlabel(r'$\Delta_{dim}$ ')
+    ax[0,0].set_xlabel(r'$\Delta_{dim}$ ')
     ax[0,1].set_ylabel(r'$(b/a)_{8Mpc}$')
     ax[1,0].set_xlabel(r'$\Delta_{dim}$')
     ax[1,0].set_ylabel(r'$(c/a)_{8Mpc}$')
@@ -251,30 +269,350 @@ def scatter(c_a_list, b_a_list, ddim_list, dbright_list, ddim_for_ratios):
     ax[1,1].set_ylabel(r'$(c/a)_{8Mpc}$')
     # hist or scatter?
     ax[0,0].hist2d(ddim_list, dbright_list, bins=30, cmap='Greys')
-    ax[0,1].hist2d(ddim_for_ratios, b_a_list, bins=30, cmap='Greys')
-    ax[1,0].hist2d(ddim_for_ratios, c_a_list, bins=30, cmap='Greys')
+    ax[0,1].hist2d(ddim_list, b_a_list, bins=30, cmap='Greys')
+    ax[1,0].hist2d(ddim_list, c_a_list, bins=30, cmap='Greys')
     ax[1,1].hist2d(b_a_list, c_a_list, bins=30, cmap='Greys')
     comment = mpatches.Patch(edgecolor='black', facecolor='white', label=r'M$\propto$L')
     ax[0,0].legend(handles=[comment])
     plt.show()
 
 
-def plot(c_a_list, c_a_Rvir, ddim_for_ratios):
-    print(len(c_a_list))
-    print(len(c_a_Rvir))
-    print(len(ddim_for_ratios))
-    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(7, 7), dpi=100, tight_layout=True)
-    fig.suptitle('Distribution of satellite axis ratios in Different Environments')
-    ax[0,0].set_xlabel(r'$\Delta_{dim}_{8Mpc}$')
-    ax[0,0].set_ylabel(r'$(c/a)_{8Mpc}$')
-    ax[0,0].hist2d(ddim_for_ratios, c_a_list, bins=30, cmap='Greys')
-    # ddim of host environment on x
-    # c/a of host on y
-    # plot points c/a of sats
-    # make smallest 25% c/a sats red, rest blue
+def trial_plots(c_a_env, c_a_Rvir, ddim_list, mpeak_list):
+    """Trying out different plots that compare three host halo
+    properites at a time: c/a axis ratio at 8Mpc, c/a_rvir, and
+    overdensity of dim objects in the 8Mpc environment of host.
+    """
+    fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(7, 7), dpi=120, constrained_layout=True)
+    fig.suptitle('Distribution of Host Halo Axis Ratios in Different Environments')
+    ax[0,0].set_xlabel(r'$\Delta_{dim}$')
+    ax[0,0].set_ylabel(r'$(c/a)_{host}$')
+    ax[0,0].scatter(ddim_list, c_a_env, marker='o', color='red', alpha=0.25, label=r'$(c/a)_{8Mpc}$')
+    ax[0,0].scatter(ddim_list, c_a_Rvir, marker='o', color='green', alpha=0.25, label=r'$(c/a)_{rvir}$')
+    ax[0, 0].legend(loc="lower right", fontsize=6)
 
-    # How do I make arrays the same shape/length for ca_sats and ddim/ca_env??
-    # Confused how to input data into plotting functions
+    # plot the lowest and highest 25% of hosts in c_a_Rvir
+    c_a_env_arr = np.asarray(c_a_env)
+    c_a_Rvir_arr = np.asarray(c_a_Rvir)
+    ddim_arr = np.asarray(ddim_list)
+    # np.percentile ... explore this
+    small_ratio_lim = c_a_Rvir_arr < np.percentile(c_a_Rvir_arr, 25)
+    large_ratio_lim = c_a_Rvir_arr > np.percentile(c_a_Rvir_arr, 75)
+    ax[0, 1].set_xlabel(r'$\Delta_{dim}$')
+    ax[0, 1].set_ylabel(r'$(c/a)_{8Mpc}$')
+    ax[0, 1].scatter(ddim_arr[large_ratio_lim], c_a_env_arr[large_ratio_lim], marker='o', color='green', alpha=0.25, label=r'largest 25% $(c/a)_{rvir}$')
+    ax[0, 1].scatter(ddim_arr[small_ratio_lim], c_a_env_arr[small_ratio_lim], marker='o', color='orange', alpha=0.25, label=r'smallest 25% $(c/a)_{rvir}$')
+    ax[0, 1].legend(loc="lower right", fontsize=6)
+
+    ax[1, 0].set_xlabel(r'$(c/a)_{rvir}$')
+    ax[1, 0].set_ylabel(r'$(c/a)_{8Mpc}$')
+    ax[1, 0].scatter(c_a_Rvir, c_a_env, marker='o', color='black', alpha=0.25)
+
+    ax[1, 1].set_xlabel(r'$(c/a)_{rvir}$')
+    ax[1, 1].set_ylabel(r'$Mpeak_{host}$ (Msun/h)')
+    ax[1, 1].scatter(c_a_Rvir, mpeak_list, marker='o', color='blue', alpha=0.25)
+    plt.show()
+    # last plot indicates there aren't any high mass/highly populated flat configurations in this sim
+    # that indicates a plane of satellites (host haloes)?
+"""
+c/a_rvir, ddim, dbright 
+
+c/a_rvir, ddim, c/a_8,  
+
+c/a_rvir, ddim, b/a_8 
+
+c/a_rvir, dbright, c/a_8 
+
+c/a_rvir, dbright, b/a_8 
+
+c/a_rvir, c/a_8, b/a_8 
+"""
+def group_1(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
+    c_a_Rvir = np.asarray(c_a_Rvir)
+    ddim_list = np.asarray(ddim_list)
+    dbright_list = np.asarray(dbright_list)
+
+    # x: ddim
+    # y: dbright
+    # z: c_a_Rvir
+
+    # fig1, ax = plt.subplots(nrows=2, ncols=2, figsize=(7, 7), dpi=120, constrained_layout=True)
+    # x, y, cut on z
+    if i == 0:
+        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
+        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
+        ax.scatter(ddim_list[large_ratio_lim], dbright_list[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $(c/a)_{rvir}$')
+        ax.scatter(ddim_list[small_ratio_lim], dbright_list[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $(c/a)_{rvir}$')
+        ax.set_xlabel(r'$\Delta_{dim}$')
+        ax.set_ylabel(r'$\Delta_{bright}$')
+        ax.legend(loc="lower right", fontsize=6)
+    # x, z, cut on y
+    if i == 1:
+        small_ratio_lim = dbright_list < np.percentile(dbright_list, 25)
+        large_ratio_lim = dbright_list > np.percentile(dbright_list, 75)
+        ax.scatter(ddim_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $\Delta_{bright}$')
+        ax.scatter(ddim_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $\Delta_{bright}$')
+        ax.set_xlabel(r'$\Delta_{dim}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+    # y, z cut on x
+    if i == 2:
+        small_ratio_lim = ddim_list < np.percentile(ddim_list, 25)
+        large_ratio_lim = ddim_list > np.percentile(ddim_list, 75)
+        ax.scatter(dbright_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $\Delta_{dim}$')
+        ax.scatter(dbright_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $\Delta_{dim}$')
+        ax.set_xlabel(r'$\Delta_{bright}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+
+
+def group_2(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
+    c_a_env = np.asarray(c_a_env)
+    c_a_Rvir = np.asarray(c_a_Rvir)
+    ddim_list = np.asarray(ddim_list)
+
+    # x: ddim
+    # y: c_a_env
+    # z: c_a_Rvir
+
+    # x, y, cut on z
+    if i == 0:
+        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
+        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
+        ax.scatter(ddim_list[large_ratio_lim], c_a_env[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $(c/a)_{rvir}$')
+        ax.scatter(ddim_list[small_ratio_lim], c_a_env[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $(c/a)_{rvir}$')
+        ax.set_xlabel(r'$\Delta_{dim}$')
+        ax.set_ylabel(r'$(c/a)_{8Mpc}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+    # x, z, cut on y
+    if i == 1:
+        small_ratio_lim = c_a_env < np.percentile(c_a_env, 25)
+        large_ratio_lim = c_a_env > np.percentile(c_a_env, 75)
+        ax.scatter(ddim_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $(c/a)_{8Mpc}$')
+        ax.scatter(ddim_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $(c/a)_{8Mpc}$')
+        ax.set_xlabel(r'$\Delta_{dim}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+    # y, z cut on x
+    if i == 2:
+        small_ratio_lim = ddim_list < np.percentile(ddim_list, 25)
+        large_ratio_lim = ddim_list > np.percentile(ddim_list, 75)
+        ax.scatter(c_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $\Delta_{dim}$')
+        ax.scatter(c_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $\Delta_{dim}$')
+        ax.set_xlabel(r'$(c/a)_{8Mpc}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+def group_3(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
+    b_a_env = np.asarray(b_a_env)
+    c_a_Rvir = np.asarray(c_a_Rvir)
+    ddim_list = np.asarray(ddim_list)
+
+    # x: ddim
+    # y: b_a_env
+    # z: c_a_Rvir
+
+    # x, y, cut on z
+    if i == 0:
+        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
+        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
+        ax.scatter(ddim_list[large_ratio_lim], b_a_env[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $(c/a)_{rvir}$')
+        ax.scatter(ddim_list[small_ratio_lim], b_a_env[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $(c/a)_{rvir}$')
+        ax.set_xlabel(r'$\Delta_{dim}$')
+        ax.set_ylabel(r'$(b/a)_{8Mpc}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+    # x, z, cut on y
+    if i == 1:
+        small_ratio_lim = b_a_env < np.percentile(b_a_env, 25)
+        large_ratio_lim = b_a_env > np.percentile(b_a_env, 75)
+        ax.scatter(ddim_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $(b/a)_{8Mpc}$')
+        ax.scatter(ddim_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $(b/a)_{8Mpc}$')
+        ax.set_xlabel(r'$\Delta_{dim}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+    # y, z cut on x
+    if i == 2:
+        small_ratio_lim = ddim_list < np.percentile(ddim_list, 25)
+        large_ratio_lim = ddim_list > np.percentile(ddim_list, 75)
+        ax.scatter(b_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $\Delta_{dim}$')
+        ax.scatter(b_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $\Delta_{dim}$')
+        ax.set_xlabel(r'$(b/a)_{8Mpc}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+
+def group_4(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
+    c_a_env = np.asarray(c_a_env)
+    c_a_Rvir = np.asarray(c_a_Rvir)
+    dbright_list = np.asarray(dbright_list)
+
+    # x: dbright
+    # y: c_a_env
+    # z: c_a_Rvir
+
+    # x, y, cut on z
+    if i == 0:
+        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
+        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
+        ax.scatter(dbright_list[large_ratio_lim], c_a_env[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $(c/a)_{rvir}$')
+        ax.scatter(dbright_list[small_ratio_lim], c_a_env[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $(c/a)_{rvir}$')
+        ax.set_xlabel(r'$\Delta_{bright}$')
+        ax.set_ylabel(r'$(c/a)_{8Mpc}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+    # x, z, cut on y
+    if i == 1:
+        small_ratio_lim = c_a_env < np.percentile(c_a_env, 25)
+        large_ratio_lim = c_a_env > np.percentile(c_a_env, 75)
+        ax.scatter(dbright_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $\Delta_{bright}$')
+        ax.scatter(dbright_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $\Delta_{bright}$')
+        ax.set_xlabel(r'$\Delta_{bright}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+    # y, z cut on x
+    if i == 2:
+        small_ratio_lim = dbright_list < np.percentile(dbright_list, 25)
+        large_ratio_lim = dbright_list > np.percentile(dbright_list, 75)
+        ax.scatter(c_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $\Delta_{bright}$')
+        ax.scatter(c_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $\Delta_{bright}$')
+        ax.set_xlabel(r'$(c/a)_{8Mpc}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+
+def group_5(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
+    b_a_env = np.asarray(b_a_env)
+    c_a_Rvir = np.asarray(c_a_Rvir)
+    dbright_list = np.asarray(dbright_list)
+
+    # x: dbright
+    # y: b_a_env
+    # z: c_a_Rvir
+
+    # x, y, cut on z
+    if i == 0:
+        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
+        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
+        ax.scatter(dbright_list[large_ratio_lim], b_a_env[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $(c/a)_{rvir}$')
+        ax.scatter(dbright_list[small_ratio_lim], b_a_env[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $(c/a)_{rvir}$')
+        ax.set_xlabel(r'$\Delta_{bright}$')
+        ax.set_ylabel(r'$(b/a)_{8Mpc}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+    # x, z, cut on y
+    if i == 1:
+        small_ratio_lim = b_a_env < np.percentile(b_a_env, 25)
+        large_ratio_lim = b_a_env > np.percentile(b_a_env, 75)
+        ax.scatter(dbright_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $(b/a)_{8Mpc}$')
+        ax.scatter(dbright_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $(b/a)_{8Mpc}$')
+        ax.set_xlabel(r'$\Delta_{bright}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+    # y, z cut on x
+    if i == 2:
+        small_ratio_lim = dbright_list < np.percentile(dbright_list, 25)
+        large_ratio_lim = dbright_list > np.percentile(dbright_list, 75)
+        ax.scatter(b_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $\Delta_{bright}$')
+        ax.scatter(b_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $\Delta_{bright}$')
+        ax.set_xlabel(r'$(b/a)_{8Mpc}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+
+def group_6(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
+    c_a_env = np.asarray(c_a_env)
+    b_a_env = np.asarray(b_a_env)
+    c_a_Rvir = np.asarray(c_a_Rvir)
+
+    # x: c_a_env
+    # y: b_a_env
+    # z: c_a_Rvir
+
+    # x, y, cut on z
+    if i == 0:
+        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
+        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
+        ax.scatter(c_a_env[large_ratio_lim], b_a_env[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $(c/a)_{rvir}$')
+        ax.scatter(c_a_env[small_ratio_lim], b_a_env[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $(c/a)_{rvir}$')
+        ax.set_xlabel(r'$(c/a)_{8Mpc}$')
+        ax.set_ylabel(r'$(b/a)_{8Mpc}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+    # x, z, cut on y
+    if i == 1:
+        small_ratio_lim = b_a_env < np.percentile(b_a_env, 25)
+        large_ratio_lim = b_a_env > np.percentile(b_a_env, 75)
+        ax.scatter(c_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $(b/a)_{8Mpc}$')
+        ax.scatter(c_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $(b/a)_{8Mpc}$')
+        ax.set_xlabel(r'$(c/a)_{8Mpc}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+    # y, z cut on x
+    if i == 2:
+        small_ratio_lim = c_a_env < np.percentile(c_a_env, 25)
+        large_ratio_lim = c_a_env > np.percentile(c_a_env, 75)
+        ax.scatter(b_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
+                         label=r'largest 25% $(c/a)_{8Mpc}$')
+        ax.scatter(b_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
+                         label=r'smallest 25% $(c/a)_{8Mpc}$')
+        ax.set_xlabel(r'$(b/a)_{8Mpc}$')
+        ax.set_ylabel(r'$(c/a)_{rvir}$')
+        ax.legend(loc="lower right", fontsize=6)
+
+
+def all_groups(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list):
+    """comment
+    """
+    fig, ax = plt.subplots(6, 3, figsize=(15, 9), dpi=95, constrained_layout=True)
+    for i in range(3):
+        group_1(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[0][i], i)
+        group_2(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[1][i], i)
+        group_3(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[2][i], i)
+        group_4(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[3][i], i)
+        group_5(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[4][i], i)
+        group_6(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[5][i], i)
+    fig.suptitle('Distributions of Satellites and Their Environmental Properties')
     plt.show()
 
 if __name__ == '__main__':
