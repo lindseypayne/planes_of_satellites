@@ -14,25 +14,26 @@ V_sphere = (4*np.pi*(R**3)) / 3
 sigma = 0   # the scatter between halo mass and galaxy luminosity
 
 def main():
-    f, x, y, z, mvir, rvir, id, upid, M_B, mpeak = get_file_data()
+    f, x, y, z, mvir, rvir, id, upid, M_B, mpeak, vx, vy, vz = get_file_data()
     host_masses, target_ids = find_hosts(mvir, upid, M_B)
     c_a_env, b_a_env, c_a_Rvir, b_a_Rvir, ddim_list, ddim_rvir_ratios, \
-    dbright_list, mpeak_list = find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak)
+    dbright_list, mpeak_list, L_direction = find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz)
     scatter(c_a_env, b_a_env, ddim_list, dbright_list)
     trial_plots(c_a_env, c_a_Rvir, ddim_list, mpeak_list)
     all_groups(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list)
+    #all_groups(L_direction, c_a_env, b_a_env, ddim_list, dbright_list)
 
 def get_file_data():
     """ This function reads in data from a high resolution simulation
     and computes the B-band magnitude (M_B) for each halo/subhalo.
     """
     f = minh.open('L63_hlist_1.00000.minh')
-    x, y, z, mvir, rvir, id, upid, mpeak = f.read(['x', 'y', 'z',
+    x, y, z, mvir, rvir, id, upid, mpeak, vx, vy, vz = f.read(['x', 'y', 'z',
                                             'mvir', 'rvir',
-                                            'id', 'upid', 'mpeak'])
+                                            'id', 'upid', 'mpeak', 'vx', 'vy', 'vz'])
     # mpeak: maximum mass a halo has ever had over the lifetime of the simulation
     M_B = match_B(mpeak, sigma, mass_def="mpeak", LF="Neuzil", data_dir='.')
-    return f, x, y, z, mvir, rvir, id, upid, M_B, mpeak
+    return f, x, y, z, mvir, rvir, id, upid, M_B, mpeak, vx, vy, vz
 
 # critical vs mean density: need for universe to not be curved vs. average in a given volume
 # density profile for DM halo: find a place where density drops below __x critical, mean density... that's the radius
@@ -146,13 +147,74 @@ def get_axes(sub_dx, sub_dy, sub_dz, i):
         evalues, i)
     c_a_ratio = c_len / a_len
     b_a_ratio = b_len / a_len
+    """
+    if i == 30:
+        print(evalues)
+        print('c/a ratio', c_a_ratio)
+        print('b/a ratio', b_a_ratio)
+    """
     return c_a_ratio, b_a_ratio
-
-def new_tensor():
-    # compare to other method
-
-def sub_angmom():
+# figuring out the rotation of a satellite system around a host
+def sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax):
+    """ Find L using RHR of each satellite rotating around minor axis, if all are positive or
+    negative they are rotating together. Take dot product of AM vector with minor axis to get direction.
     # compute angular velocities
+    # angular velocity equation: \vec{\omega_i} = \vec{r_i} \cross \vec{v_i} / |r_i|^2
+    # linear velocities are in catalog as vx, vy, vz in km/s  ... are these already relative to host center?
+    # omega = r x v / r^2
+    # L = I x omega
+    # L and omega are column vectors, I is a matrix
+    # where i selects the position and velocity vectors of a subhalo relative to the host center ... sub_dx, etc
+    """
+    omega_xarr = (sub_dx * vx) / (np.absolute(sub_dx))**1/2
+    omega_yarr = (sub_dy * vy) / (np.absolute(sub_dy))**1/2
+    omega_zarr = (sub_dz * vz) / (np.absolute(sub_dz))**1/2
+    L_list = []
+    L_unit_list = []
+    L_direction = []
+    # loops over all of host's subhaloes
+    for i in range(len(omega_xarr)):
+        omega_x = omega_xarr[i]
+        omega_y = omega_yarr[i]
+        omega_z = omega_zarr[i]
+        omega_col = np.reshape(np.array([omega_x, omega_y, omega_z]), (3,1))
+        L = np.dot(inertia_tensor, omega_col)  # actual angular momentum
+        L_unit = L / np.sqrt((L[0]**2) + (L[1]**2) + (L[2]**2))    # direction of angular momentum
+        L_dir = np.dot(minor_ax, L_unit)
+        L_direction.append(L_dir)
+    L_direction = np.asarray(L_direction)
+    return L_direction
+
+def new_tensor(sub_dx, sub_dy, sub_dz, vx, vy, vz):
+    # compare to other method
+    # S_ii, S_ij, S_ji, S_jj, S_jk, S_kj, S_kk, S_ik, S_ki
+    # individual elements of shape tensor: Sij = sum[m_k (r_k)_i (r_k)_j] / sum[m_k]
+    inertia_tensor = np.zeros((3, 3))
+    inertia_tensor[0][0] = np.sum(mass * sub_dx * sub_dx) / np.sum(mass)
+    inertia_tensor[0][1] = np.sum(mass * sub_dx * sub_dy) / np.sum(mass)
+    inertia_tensor[0][2] = np.sum(mass * sub_dx * sub_dz) / np.sum(mass)
+    inertia_tensor[1][0] = np.sum(mass * sub_dy * sub_dx) / np.sum(mass)
+    inertia_tensor[1][1] = np.sum(mass * sub_dy * sub_dy) / np.sum(mass)
+    inertia_tensor[1][2] = np.sum(mass * sub_dy * sub_dz) / np.sum(mass)
+    inertia_tensor[2][0] = np.sum(mass * sub_dz * sub_dx) / np.sum(mass)
+    inertia_tensor[2][1] = np.sum(mass * sub_dz * sub_dy) / np.sum(mass)
+    inertia_tensor[2][2] = np.sum(mass * sub_dz * sub_dz) / np.sum(mass)
+    # for ellipsoid of uniform density, evalues = Ma^2/5, Mb^2/5, Mc^2/5
+    evalues, evectors = np.linalg.eig(inertia_tensor)
+    Ia = evalues[0]
+    Ib = evalues[1]
+    Ic = evalues[2]
+    smallest_evalue = np.where(evalues == evalues.min())[0]
+    minor_ax = np.reshape(evectors[smallest_evalue], (1,3))
+    a = ((5 * Ia) / mass) ** (1/2)
+    b = ((5 * Ib) / mass) ** (1/2)
+    c = ((5 * Ic) / mass) ** (1/2)
+    a_len, b_len, c_len = np.flip(np.sort([a, b, c]))
+    c_a_ratio = c_len / a_len
+    b_a_ratio = b_len / a_len
+    L_direction = sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax)
+    return c_a_ratio, b_a_ratio, L_direction
+
 
 def dim_bright_avgs(M_B):
     """ Calculate the average number density of bright objects and
@@ -168,10 +230,12 @@ def dim_bright_avgs(M_B):
     print('avg_bright ', avg_bright)
     avg_dim = np.sum((-16 > M_B) & (M_B > -18)) / V_sim
     print('avg_dim ', avg_dim)
+    print('')
     return avg_dim, avg_bright
 
 
-def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak):
+
+def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
     """ Find dim and bright objects within 8Mpc sphere. Compute
     axis ratios for each host using objects, not limited to subhaloes.
 
@@ -198,6 +262,7 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak):
     c_a_Rvir = []     # axis ratios of individual host haloes, not environmental
     b_a_Rvir = []
     mpeak_host_list = []
+    L_direction = []
     i = 0
     for id in target_ids[0]:
         host_point = points[id]
@@ -211,9 +276,6 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak):
         obj_dz = obj_z - host_point[2]
         # Computing axis ratios using neighbors, not necessarily subhalo
         c_a_ratio, b_a_ratio = get_axes(obj_dx, obj_dy, obj_dz, i)
-
-        ### add new tensor method and print values to compare
-
         # B magnitudes of each object around the host
         M_B_obj = M_B[object_idx]
         num_bright = len(np.where(M_B_obj < -20.5)[0])
@@ -224,10 +286,10 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak):
         sub_dx = sub_x - host_point[0]
         sub_dy = sub_y - host_point[1]
         sub_dz = sub_z - host_point[2]
+        sub_vx = vx[sub_idx]
+        sub_vy = vy[sub_idx]
+        sub_vz = vz[sub_idx]
         c_a_rvir, b_a_rvir = get_axes(sub_dx, sub_dy, sub_dz, i)
-
-        ### add new tensor method and print values to compare
-
         M_B_sub = M_B[sub_idx]
         mpeak_host = mpeak[id]
         num_bright2 = len(np.where(M_B_sub < -20.5)[0])
@@ -245,12 +307,18 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak):
             dbright = (num_bright / V_sphere) / avg_bright
             ddim_list.append(ddim)
             dbright_list.append(dbright)
-            #
             mpeak_host_list.append(mpeak_host)
-
+            c_a_new, b_a_new, L_dir = new_tensor(sub_dx, sub_dy, sub_dz, sub_vx, sub_vy, sub_vz)
         i +=1
-    return c_a_env, b_a_env, c_a_Rvir, b_a_Rvir, ddim_list, ddim_rvir_ratios, dbright_list, mpeak_host_list
+        rotation(L_direction, c_a_Rvir)
+    return c_a_env, b_a_env, c_a_Rvir, b_a_Rvir, ddim_list, ddim_rvir_ratios, dbright_list, mpeak_host_list, L_dir
 
+
+def rotation(L_direction, c_a_Rvir):
+    fig, ax = plt.subplots(figsize=(7, 7), dpi=120, constrained_layout=True)
+    fig.suptitle('')
+    ax.scatter(L_direction, c_a_Rvir, marker='o', color='CHANGE', alpha=0.25)
+    plt.show()
 
 def scatter(c_a_list, b_a_list, ddim_list, dbright_list):
     """ Recreate 2-dimensional scatter plots from Maria's paper.
@@ -313,6 +381,7 @@ def trial_plots(c_a_env, c_a_Rvir, ddim_list, mpeak_list):
     plt.show()
     # last plot indicates there aren't any high mass/highly populated flat configurations in this sim
     # that indicates a plane of satellites (host haloes)?
+
 """
 c/a_rvir, ddim, dbright 
 
@@ -614,6 +683,27 @@ def all_groups(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list):
         group_6(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[5][i], i)
     fig.suptitle('Distributions of Satellites and Their Environmental Properties')
     plt.show()
+
+
+### Introduce more statistics: make more plots with local properties on x,y axes and split on an environmental ###
+# environmental: triaxiality, ratio of ddim to dbright
+# local: ba_rvir, rotation together around a common axis
+def all_groups(L_direction, c_a_env, b_a_env, ddim_list, dbright_list):
+    """comment
+    """
+    fig, ax = plt.subplots(6, 3, figsize=(15, 9), dpi=95, constrained_layout=True)
+    for i in range(3):
+        group_1(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[0][i], i)
+        group_2(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[1][i], i)
+        group_3(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[2][i], i)
+        group_4(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[3][i], i)
+        group_5(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[4][i], i)
+        group_6(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[5][i], i)
+    fig.suptitle('Distributions of Satellites and Their Environmental Properties')
+    plt.show()
+
+
+
 
 if __name__ == '__main__':
     main()
