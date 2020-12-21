@@ -16,12 +16,13 @@ sigma = 0   # the scatter between halo mass and galaxy luminosity
 def main():
     f, x, y, z, mvir, rvir, id, upid, M_B, mpeak, vx, vy, vz = get_file_data()
     host_masses, target_ids = find_hosts(mvir, upid, M_B)
-    c_a_env, b_a_env, c_a_Rvir, b_a_Rvir, ddim_list, ddim_rvir_ratios, \
-    dbright_list, mpeak_list, L_direction = find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz)
-    scatter(c_a_env, b_a_env, ddim_list, dbright_list)
-    trial_plots(c_a_env, c_a_Rvir, ddim_list, mpeak_list)
-    all_groups(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list)
-    #all_groups(L_direction, c_a_env, b_a_env, ddim_list, dbright_list)
+    c_a_env, b_a_env, c_a_rvir, b_a_rvir, ddim_list, ddim_rvir_ratios, \
+    dbright_list, mpeak_list, rotations = find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz)
+    #scatter(c_a_env, b_a_env, ddim_list, dbright_list)
+    #trial_plots(c_a_env, c_a_Rvir, ddim_list, mpeak_list)
+    #statistics_sat_split(c_a_rvir, c_a_env, b_a_env, ddim_list, dbright_list)
+    #statistics_env_split(rotations, c_a_env, b_a_env, ddim_list, dbright_list, c_a_rvir, b_a_rvir)
+    statistics_percentiles(rotations, c_a_env, b_a_env, ddim_list, dbright_list, c_a_rvir, b_a_rvir)
 
 def get_file_data():
     """ This function reads in data from a high resolution simulation
@@ -154,6 +155,8 @@ def get_axes(sub_dx, sub_dy, sub_dz, i):
         print('b/a ratio', b_a_ratio)
     """
     return c_a_ratio, b_a_ratio
+
+
 # figuring out the rotation of a satellite system around a host
 def sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax):
     """ Find L using RHR of each satellite rotating around minor axis, if all are positive or
@@ -165,12 +168,15 @@ def sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax):
     # L = I x omega
     # L and omega are column vectors, I is a matrix
     # where i selects the position and velocity vectors of a subhalo relative to the host center ... sub_dx, etc
+
+
+    Now I have too many values … if 40% satellites have positive rotation and 60% is negative, absolute
+    value subtraction of 2 and get a value of 0.2 for this host. Higher numbers = more corotation!!
+
     """
     omega_xarr = (sub_dx * vx) / (np.absolute(sub_dx))**1/2
     omega_yarr = (sub_dy * vy) / (np.absolute(sub_dy))**1/2
     omega_zarr = (sub_dz * vz) / (np.absolute(sub_dz))**1/2
-    L_list = []
-    L_unit_list = []
     L_direction = []
     # loops over all of host's subhaloes
     for i in range(len(omega_xarr)):
@@ -183,7 +189,14 @@ def sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax):
         L_dir = np.dot(minor_ax, L_unit)
         L_direction.append(L_dir)
     L_direction = np.asarray(L_direction)
-    return L_direction
+    count = 0
+    for el in L_direction:
+        if el >= 0:
+            count += 1
+    pos_ratio = count / len(L_direction)
+    neg_ratio = 1 - pos_ratio
+    rotation = np.abs(pos_ratio - neg_ratio)
+    return rotation
 
 def new_tensor(sub_dx, sub_dy, sub_dz, vx, vy, vz):
     # compare to other method
@@ -212,8 +225,8 @@ def new_tensor(sub_dx, sub_dy, sub_dz, vx, vy, vz):
     a_len, b_len, c_len = np.flip(np.sort([a, b, c]))
     c_a_ratio = c_len / a_len
     b_a_ratio = b_len / a_len
-    L_direction = sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax)
-    return c_a_ratio, b_a_ratio, L_direction
+    rotation = sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax)
+    return c_a_ratio, b_a_ratio, rotation
 
 
 def dim_bright_avgs(M_B):
@@ -230,9 +243,28 @@ def dim_bright_avgs(M_B):
     print('avg_bright ', avg_bright)
     avg_dim = np.sum((-16 > M_B) & (M_B > -18)) / V_sim
     print('avg_dim ', avg_dim)
-    print('')
     return avg_dim, avg_bright
 
+
+def unit_tests(i):
+    """Create a set of points with specific axis ratio, np.random.ran, Gaussian distribution in all 3 directions (array),
+    multiply one direction by 1/2 or shift by adding a number or something, know which should be which axis.
+
+    Take favorite velocity and position vector and see what unit L vector it gets me.
+    Check that unit vectors are pointing inn same direction. 2D version: plt.quiver
+    """
+    # numbers 0.0 - 1.0
+    test_dx = 0.1*(np.random.rand(100))  # smaller the fraction, smaller the c/a ratio
+    test_dy = np.random.rand(100)
+    test_dz = np.random.rand(100)
+    vx_test = np.random.rand(100)
+    vy_test = np.random.rand(100)
+    vz_test = np.random.rand(100)
+    c_a_test, b_a_test, rotations_test = new_tensor(test_dx, test_dy, test_dz, vx_test, vy_test, vz_test)
+    if i == 30:
+        print('ca test', c_a_test) # smaller = flatter configuration
+        print('ba test', b_a_test)
+        print('Ldir test', rotations_test) # getting about 1 every time, means everything is pointed in same direction
 
 
 def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
@@ -262,7 +294,7 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
     c_a_Rvir = []     # axis ratios of individual host haloes, not environmental
     b_a_Rvir = []
     mpeak_host_list = []
-    L_direction = []
+    rotations = []
     i = 0
     for id in target_ids[0]:
         host_point = points[id]
@@ -286,9 +318,13 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
         sub_dx = sub_x - host_point[0]
         sub_dy = sub_y - host_point[1]
         sub_dz = sub_z - host_point[2]
-        sub_vx = vx[sub_idx]
-        sub_vy = vy[sub_idx]
-        sub_vz = vz[sub_idx]
+
+        sub_vx = vx[sub_idx] - vx[id]
+        sub_vy = vy[sub_idx] - vy[id]
+        sub_vz = vz[sub_idx] - vz[id]
+
+        #unit_tests(i)
+
         c_a_rvir, b_a_rvir = get_axes(sub_dx, sub_dy, sub_dz, i)
         M_B_sub = M_B[sub_idx]
         mpeak_host = mpeak[id]
@@ -308,17 +344,17 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
             ddim_list.append(ddim)
             dbright_list.append(dbright)
             mpeak_host_list.append(mpeak_host)
-            c_a_new, b_a_new, L_dir = new_tensor(sub_dx, sub_dy, sub_dz, sub_vx, sub_vy, sub_vz)
-        i +=1
-        rotation(L_direction, c_a_Rvir)
-    return c_a_env, b_a_env, c_a_Rvir, b_a_Rvir, ddim_list, ddim_rvir_ratios, dbright_list, mpeak_host_list, L_dir
+            c_a_new, b_a_new, rotation = new_tensor(sub_dx, sub_dy, sub_dz, sub_vx, sub_vy, sub_vz)
+            rotations.append(rotation)
+        """
+        if i == 30:
+            print('c/a NEW', c_a_new)
+            print('b/a NEW', b_a_new)
+            print('Ldir', rotation)
+        """
+        i += 1
+    return c_a_env, b_a_env, c_a_Rvir, b_a_Rvir, ddim_list, ddim_rvir_ratios, dbright_list, mpeak_host_list, rotations
 
-
-def rotation(L_direction, c_a_Rvir):
-    fig, ax = plt.subplots(figsize=(7, 7), dpi=120, constrained_layout=True)
-    fig.suptitle('')
-    ax.scatter(L_direction, c_a_Rvir, marker='o', color='CHANGE', alpha=0.25)
-    plt.show()
 
 def scatter(c_a_list, b_a_list, ddim_list, dbright_list):
     """ Recreate 2-dimensional scatter plots from Maria's paper.
@@ -382,325 +418,154 @@ def trial_plots(c_a_env, c_a_Rvir, ddim_list, mpeak_list):
     # last plot indicates there aren't any high mass/highly populated flat configurations in this sim
     # that indicates a plane of satellites (host haloes)?
 
-"""
-c/a_rvir, ddim, dbright 
 
-c/a_rvir, ddim, c/a_8,  
-
-c/a_rvir, ddim, b/a_8 
-
-c/a_rvir, dbright, c/a_8 
-
-c/a_rvir, dbright, b/a_8 
-
-c/a_rvir, c/a_8, b/a_8 
-"""
-def group_1(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
-    c_a_Rvir = np.asarray(c_a_Rvir)
-    ddim_list = np.asarray(ddim_list)
-    dbright_list = np.asarray(dbright_list)
-
-    # x: ddim
-    # y: dbright
-    # z: c_a_Rvir
-
-    # fig1, ax = plt.subplots(nrows=2, ncols=2, figsize=(7, 7), dpi=120, constrained_layout=True)
-    # x, y, cut on z
-    if i == 0:
-        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
-        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
-        ax.scatter(ddim_list[large_ratio_lim], dbright_list[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $(c/a)_{rvir}$')
-        ax.scatter(ddim_list[small_ratio_lim], dbright_list[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $(c/a)_{rvir}$')
-        ax.set_xlabel(r'$\Delta_{dim}$')
-        ax.set_ylabel(r'$\Delta_{bright}$')
-        ax.legend(loc="lower right", fontsize=6)
+def group(vara, varb, varc, ax, i, j, color1, color2, per1, per2, labela, labelb, labelc):
+    if i & j == 0:
+        small_ratio_lim = vara < np.percentile(vara, per1)
+        large_ratio_lim = vara > np.percentile(vara, per2)
+        ax.scatter(varb[large_ratio_lim], varc[large_ratio_lim], marker='.', color=color1,
+                         label='largest ' + str(per1) + '% ' + labela)
+        ax.scatter(varb[small_ratio_lim], varc[small_ratio_lim], marker='.', color=color2,
+                         label='smallest ' + str(per1) + '% ' + labela)
+        ax.axis('square')
+        ax.set_xlabel(labelb, fontsize=8)
+        ax.set_ylabel(labelc, fontsize=8)
+        ax.tick_params(axis="x", labelsize=8)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.legend(loc="best", fontsize=5)
     # x, z, cut on y
-    if i == 1:
-        small_ratio_lim = dbright_list < np.percentile(dbright_list, 25)
-        large_ratio_lim = dbright_list > np.percentile(dbright_list, 75)
-        ax.scatter(ddim_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $\Delta_{bright}$')
-        ax.scatter(ddim_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $\Delta_{bright}$')
-        ax.set_xlabel(r'$\Delta_{dim}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
+    if i & j == 1:
+        small_ratio_lim = varc < np.percentile(varc, per1)
+        large_ratio_lim = varc > np.percentile(varc, per2)
+
+        ax.scatter(varb[large_ratio_lim], vara[large_ratio_lim], marker='.', color=color1,
+                         label='largest ' + str(per1) + '% ' + labelc)
+        ax.scatter(varb[small_ratio_lim], vara[small_ratio_lim], marker='.', color=color2,
+                         label='smallest ' + str(per1) + '% ' + labelc)
+        ax.axis('square')
+        ax.set_xlabel(labelb, fontsize=8)
+        ax.set_ylabel(labela, fontsize=8)
+        ax.tick_params(axis="x", labelsize=8)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.legend(loc="best", fontsize=5)
     # y, z cut on x
-    if i == 2:
-        small_ratio_lim = ddim_list < np.percentile(ddim_list, 25)
-        large_ratio_lim = ddim_list > np.percentile(ddim_list, 75)
-        ax.scatter(dbright_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $\Delta_{dim}$')
-        ax.scatter(dbright_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $\Delta_{dim}$')
-        ax.set_xlabel(r'$\Delta_{bright}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
+    if i & j == 2:
+        small_ratio_lim = varb < np.percentile(varb, per1)
+        large_ratio_lim = varb > np.percentile(varb, per2)
+        ax.scatter(varc[large_ratio_lim], vara[large_ratio_lim], marker='.', color=color1,
+                         label='largest ' + str(per1) + '% ' + labelb)
+        ax.scatter(varc[small_ratio_lim], vara[small_ratio_lim], marker='.', color=color2,
+                         label='smallest ' + str(per1) + '% ' + labelb)
+        ax.axis('square')
+        ax.set_xlabel(labelc, fontsize=8)
+        ax.set_ylabel(labela, fontsize=8)
+        ax.tick_params(axis="x", labelsize=8)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.legend(loc="best", fontsize=5)
 
 
+def statistics_sat_split(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list):
+    """ Cosmetic changes to 16 plots:
 
-def group_2(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
-    c_a_env = np.asarray(c_a_env)
-    c_a_Rvir = np.asarray(c_a_Rvir)
-    ddim_list = np.asarray(ddim_list)
+            Make plots square: equal aspect ratios
 
-    # x: ddim
-    # y: c_a_env
-    # z: c_a_Rvir
+        can break into multiple plots
 
-    # x, y, cut on z
-    if i == 0:
-        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
-        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
-        ax.scatter(ddim_list[large_ratio_lim], c_a_env[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $(c/a)_{rvir}$')
-        ax.scatter(ddim_list[small_ratio_lim], c_a_env[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $(c/a)_{rvir}$')
-        ax.set_xlabel(r'$\Delta_{dim}$')
-        ax.set_ylabel(r'$(c/a)_{8Mpc}$')
-        ax.legend(loc="lower right", fontsize=6)
+            Change markers to opaque small dots
 
-    # x, z, cut on y
-    if i == 1:
-        small_ratio_lim = c_a_env < np.percentile(c_a_env, 25)
-        large_ratio_lim = c_a_env > np.percentile(c_a_env, 75)
-        ax.scatter(ddim_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $(c/a)_{8Mpc}$')
-        ax.scatter(ddim_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $(c/a)_{8Mpc}$')
-        ax.set_xlabel(r'$\Delta_{dim}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
+        Make into a 2D histogram instead of scatter, ax[1,1].hist2d(b_a_list, c_a_list, bins=30, cmap='Greys')
 
-    # y, z cut on x
-    if i == 2:
-        small_ratio_lim = ddim_list < np.percentile(ddim_list, 25)
-        large_ratio_lim = ddim_list > np.percentile(ddim_list, 75)
-        ax.scatter(c_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $\Delta_{dim}$')
-        ax.scatter(c_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $\Delta_{dim}$')
-        ax.set_xlabel(r'$(c/a)_{8Mpc}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-def group_3(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
-    b_a_env = np.asarray(b_a_env)
-    c_a_Rvir = np.asarray(c_a_Rvir)
-    ddim_list = np.asarray(ddim_list)
-
-    # x: ddim
-    # y: b_a_env
-    # z: c_a_Rvir
-
-    # x, y, cut on z
-    if i == 0:
-        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
-        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
-        ax.scatter(ddim_list[large_ratio_lim], b_a_env[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $(c/a)_{rvir}$')
-        ax.scatter(ddim_list[small_ratio_lim], b_a_env[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $(c/a)_{rvir}$')
-        ax.set_xlabel(r'$\Delta_{dim}$')
-        ax.set_ylabel(r'$(b/a)_{8Mpc}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-    # x, z, cut on y
-    if i == 1:
-        small_ratio_lim = b_a_env < np.percentile(b_a_env, 25)
-        large_ratio_lim = b_a_env > np.percentile(b_a_env, 75)
-        ax.scatter(ddim_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $(b/a)_{8Mpc}$')
-        ax.scatter(ddim_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $(b/a)_{8Mpc}$')
-        ax.set_xlabel(r'$\Delta_{dim}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-    # y, z cut on x
-    if i == 2:
-        small_ratio_lim = ddim_list < np.percentile(ddim_list, 25)
-        large_ratio_lim = ddim_list > np.percentile(ddim_list, 75)
-        ax.scatter(b_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $\Delta_{dim}$')
-        ax.scatter(b_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $\Delta_{dim}$')
-        ax.set_xlabel(r'$(b/a)_{8Mpc}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-
-def group_4(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
-    c_a_env = np.asarray(c_a_env)
-    c_a_Rvir = np.asarray(c_a_Rvir)
-    dbright_list = np.asarray(dbright_list)
-
-    # x: dbright
-    # y: c_a_env
-    # z: c_a_Rvir
-
-    # x, y, cut on z
-    if i == 0:
-        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
-        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
-        ax.scatter(dbright_list[large_ratio_lim], c_a_env[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $(c/a)_{rvir}$')
-        ax.scatter(dbright_list[small_ratio_lim], c_a_env[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $(c/a)_{rvir}$')
-        ax.set_xlabel(r'$\Delta_{bright}$')
-        ax.set_ylabel(r'$(c/a)_{8Mpc}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-    # x, z, cut on y
-    if i == 1:
-        small_ratio_lim = c_a_env < np.percentile(c_a_env, 25)
-        large_ratio_lim = c_a_env > np.percentile(c_a_env, 75)
-        ax.scatter(dbright_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $\Delta_{bright}$')
-        ax.scatter(dbright_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $\Delta_{bright}$')
-        ax.set_xlabel(r'$\Delta_{bright}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-    # y, z cut on x
-    if i == 2:
-        small_ratio_lim = dbright_list < np.percentile(dbright_list, 25)
-        large_ratio_lim = dbright_list > np.percentile(dbright_list, 75)
-        ax.scatter(c_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $\Delta_{bright}$')
-        ax.scatter(c_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $\Delta_{bright}$')
-        ax.set_xlabel(r'$(c/a)_{8Mpc}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-
-def group_5(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
-    b_a_env = np.asarray(b_a_env)
-    c_a_Rvir = np.asarray(c_a_Rvir)
-    dbright_list = np.asarray(dbright_list)
-
-    # x: dbright
-    # y: b_a_env
-    # z: c_a_Rvir
-
-    # x, y, cut on z
-    if i == 0:
-        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
-        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
-        ax.scatter(dbright_list[large_ratio_lim], b_a_env[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $(c/a)_{rvir}$')
-        ax.scatter(dbright_list[small_ratio_lim], b_a_env[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $(c/a)_{rvir}$')
-        ax.set_xlabel(r'$\Delta_{bright}$')
-        ax.set_ylabel(r'$(b/a)_{8Mpc}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-    # x, z, cut on y
-    if i == 1:
-        small_ratio_lim = b_a_env < np.percentile(b_a_env, 25)
-        large_ratio_lim = b_a_env > np.percentile(b_a_env, 75)
-        ax.scatter(dbright_list[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $(b/a)_{8Mpc}$')
-        ax.scatter(dbright_list[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $(b/a)_{8Mpc}$')
-        ax.set_xlabel(r'$\Delta_{bright}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-    # y, z cut on x
-    if i == 2:
-        small_ratio_lim = dbright_list < np.percentile(dbright_list, 25)
-        large_ratio_lim = dbright_list > np.percentile(dbright_list, 75)
-        ax.scatter(b_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $\Delta_{bright}$')
-        ax.scatter(b_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $\Delta_{bright}$')
-        ax.set_xlabel(r'$(b/a)_{8Mpc}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-
-def group_6(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax, i):
-    c_a_env = np.asarray(c_a_env)
-    b_a_env = np.asarray(b_a_env)
-    c_a_Rvir = np.asarray(c_a_Rvir)
-
-    # x: c_a_env
-    # y: b_a_env
-    # z: c_a_Rvir
-
-    # x, y, cut on z
-    if i == 0:
-        small_ratio_lim = c_a_Rvir < np.percentile(c_a_Rvir, 25)
-        large_ratio_lim = c_a_Rvir > np.percentile(c_a_Rvir, 75)
-        ax.scatter(c_a_env[large_ratio_lim], b_a_env[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $(c/a)_{rvir}$')
-        ax.scatter(c_a_env[small_ratio_lim], b_a_env[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $(c/a)_{rvir}$')
-        ax.set_xlabel(r'$(c/a)_{8Mpc}$')
-        ax.set_ylabel(r'$(b/a)_{8Mpc}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-    # x, z, cut on y
-    if i == 1:
-        small_ratio_lim = b_a_env < np.percentile(b_a_env, 25)
-        large_ratio_lim = b_a_env > np.percentile(b_a_env, 75)
-        ax.scatter(c_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $(b/a)_{8Mpc}$')
-        ax.scatter(c_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $(b/a)_{8Mpc}$')
-        ax.set_xlabel(r'$(c/a)_{8Mpc}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-    # y, z cut on x
-    if i == 2:
-        small_ratio_lim = c_a_env < np.percentile(c_a_env, 25)
-        large_ratio_lim = c_a_env > np.percentile(c_a_env, 75)
-        ax.scatter(b_a_env[large_ratio_lim], c_a_Rvir[large_ratio_lim], marker='o', color='green', alpha=0.25,
-                         label=r'largest 25% $(c/a)_{8Mpc}$')
-        ax.scatter(b_a_env[small_ratio_lim], c_a_Rvir[small_ratio_lim], marker='o', color='orange', alpha=0.25,
-                         label=r'smallest 25% $(c/a)_{8Mpc}$')
-        ax.set_xlabel(r'$(b/a)_{8Mpc}$')
-        ax.set_ylabel(r'$(c/a)_{rvir}$')
-        ax.legend(loc="lower right", fontsize=6)
-
-
-def all_groups(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list):
-    """comment
+            MAKE UNIVERSAL!
     """
-    fig, ax = plt.subplots(6, 3, figsize=(15, 9), dpi=95, constrained_layout=True)
+    c_a_rvir = np.asarray(c_a_Rvir)
+    c_a_8 = np.asarray(c_a_env)
+    b_a_8 = np.asarray(b_a_env)
+    ddim = np.asarray(ddim_list)
+    dbright = np.asarray(dbright_list)
+
+    fig, ax = plt.subplots(6, 3, figsize=(13,13), dpi=90, tight_layout=False)
+    color1 = 'red'
+    color2 = 'green'
     for i in range(3):
-        group_1(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[0][i], i)
-        group_2(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[1][i], i)
-        group_3(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[2][i], i)
-        group_4(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[3][i], i)
-        group_5(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[4][i], i)
-        group_6(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list, ax[5][i], i)
-    fig.suptitle('Distributions of Satellites and Their Environmental Properties')
+        group(c_a_rvir, ddim, dbright, ax[0][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{dim}$', r'$\Delta_{bright}$')
+        group(c_a_rvir, ddim, c_a_8, ax[1][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{dim}$', r'$(c/a)_{8Mpc}$')
+        group(c_a_rvir, ddim, b_a_8, ax[2][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{dim}$', r'$(b/a)_{8Mpc}$')
+        group(c_a_rvir, dbright, c_a_8, ax[3][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{bright}$', r'$(c/a)_{8Mpc}$')
+        group(c_a_rvir, dbright, b_a_8, ax[4][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{bright}$', r'$(b/a)_{8Mpc}$')
+        group(c_a_rvir, c_a_8, b_a_8, ax[5][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$(c/a)_{8Mpc}$', r'$(b/a)_{8Mpc}$')
+    fig.suptitle('Distributions of Satellites and Their Environmental Properties', y=0.95)
+    plt.subplots_adjust(wspace=-0.1, hspace=0.45)
     plt.show()
 
 
-### Introduce more statistics: make more plots with local properties on x,y axes and split on an environmental ###
-# environmental: triaxiality, ratio of ddim to dbright
-# local: ba_rvir, rotation together around a common axis
-def all_groups(L_direction, c_a_env, b_a_env, ddim_list, dbright_list):
-    """comment
+def statistics_env_split(rotations, c_a_env, b_a_env, ddim_list, dbright_list, ca_rvir, ba_rvir):
+    """X and Y axes are satellite properties, split on environment
+
+        Split on different percentiles... do for each set of 3 variables
+
+        Interested in things in one corner vs another corner of plot
+
+        Come up with number or metric representative of MW environment and find environments in simulation that could be analogs
+
+    Clean up code.
     """
-    fig, ax = plt.subplots(6, 3, figsize=(15, 9), dpi=95, constrained_layout=True)
-    for i in range(3):
-        group_1(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[0][i], i)
-        group_2(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[1][i], i)
-        group_3(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[2][i], i)
-        group_4(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[3][i], i)
-        group_5(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[4][i], i)
-        group_6(L_direction, c_a_env, b_a_env, ddim_list, dbright_list, ax[5][i], i)
-    fig.suptitle('Distributions of Satellites and Their Environmental Properties')
+    # environment properties, add triaxiality
+    c_a_8 = np.asarray(c_a_env)
+    b_a_8 = np.asarray(b_a_env)
+    ddim = np.asarray(ddim_list)
+    dbright = np.asarray(dbright_list)
+    dratio = ddim/dbright
+    # satellite properties
+    ca_rvir = np.asarray(ca_rvir)
+    ba_rvir = np.asarray(ba_rvir)
+    rotations = np.asarray(rotations)
+
+    fig, ax = plt.subplots(2, 3, figsize=(8, 8), dpi=100, tight_layout=True)
+    color1 = 'orange'
+    color2 = 'blue'
+    i = 0
+    j = 0
+    group(c_a_8, ca_rvir, rotations, ax[0][i], i, i, color1, color2, 25, 75, r'$(c/a)_{8Mpc}$', r'$(c/a)_{rvir}$', 'rotation')
+    group(b_a_8, ba_rvir, rotations, ax[0][i+1], i, i, color1, color2, 25, 75, r'$(b/a)_{8Mpc}$', r'$(b/a)_{rvir}$', 'rotation')
+    group(ddim, ca_rvir, rotations, ax[0][i+2], i, i, color1, color2, 25, 75, r'$\Delta_{dim}$', r'$(c/a)_{rvir}$', 'rotation')
+    group(dbright, ca_rvir, rotations, ax[1][i], i, i, color1, color2, 25, 75, r'$\Delta_{bright}$', r'$(c/a)_{rvir}$', 'rotation')
+    group(dratio, ca_rvir, rotations, ax[1][i+1], i, i, color1, color2, 25, 75, r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', 'rotation')
+    group(dratio, ca_rvir, ba_rvir, ax[1][i+2], i, i, color1, color2, 25, 75, r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', r'$(b/a)_{rvir}$')
+    fig.suptitle('Distributions of Local Satellite Properties split on Environmental Property Percentiles',  y=0.95)
     plt.show()
+
+def statistics_percentiles(rotations, c_a_env, b_a_env, ddim_list, dbright_list, ca_rvir, ba_rvir):
+    """
+    """
+    # environment properties, add triaxiality
+    c_a_8 = np.asarray(c_a_env)
+    b_a_8 = np.asarray(b_a_env)
+    ddim = np.asarray(ddim_list)
+    dbright = np.asarray(dbright_list)
+    dratio = ddim/dbright
+    # satellite properties
+    ca_rvir = np.asarray(ca_rvir)
+    ba_rvir = np.asarray(ba_rvir)
+    rotations = np.asarray(rotations)
+
+    fig, ax = plt.subplots(3, 6, figsize=(14,14), dpi=100, tight_layout=False)
+    color1 = 'purple'
+    color2 = 'pink'
+    i = 0
+    j = 0
+    per_list = [5, 10, 25]
+    for per in per_list:
+        group(c_a_8, ca_rvir, rotations, ax[i][0], j, j, color1, color2, per, 100-per, r'$(c/a)_{8Mpc}$', r'$(c/a)_{rvir}$', 'rotation')
+        group(b_a_8, ba_rvir, rotations, ax[i][1], j, j, color1, color2, per, 100-per, r'$(b/a)_{8Mpc}$', r'$(b/a)_{rvir}$', 'rotation')
+        group(ddim, ca_rvir, rotations, ax[i][2], j, j, color1, color2, per, 100-per, r'$\Delta_{dim}$', r'$(c/a)_{rvir}$', 'rotation')
+        group(dbright, ca_rvir, rotations, ax[i][3], j, j, color1, color2, per, 100-per, r'$\Delta_{bright}$', r'$(c/a)_{rvir}$', 'rotation')
+        group(dratio, ca_rvir, rotations, ax[i][4], j, j, color1, color2, per, 100-per, r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', 'rotation')
+        group(dratio, ca_rvir, ba_rvir, ax[i][5], j, j, color1, color2, per, 100-per, r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', r'$(b/a)_{rvir}$')
+        i+=1
+    fig.suptitle('Distributions of Local Satellite Properties split on Various Environmental Property Percentiles',  y=0.95)
+    plt.subplots_adjust(wspace=0.3, hspace=0.4)
+    plt.show()
+
 
 
 
