@@ -5,6 +5,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from abundance_match import match_B
+import matplotlib.lines as mlines
+from scipy import stats
+#from libraries import disk_finder
 
 L = 62.5    # Mpc/h
 mass = 1
@@ -17,12 +20,39 @@ def main():
     f, x, y, z, mvir, rvir, id, upid, M_B, mpeak, vx, vy, vz = get_file_data()
     host_masses, target_ids = find_hosts(mvir, upid, M_B)
     c_a_env, b_a_env, c_a_rvir, b_a_rvir, ddim_list, ddim_rvir_ratios, \
-    dbright_list, mpeak_list, rotations = find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz)
-    #scatter(c_a_env, b_a_env, ddim_list, dbright_list)
-    #trial_plots(c_a_env, c_a_Rvir, ddim_list, mpeak_list)
-    #statistics_sat_split(c_a_rvir, c_a_env, b_a_env, ddim_list, dbright_list)
-    #statistics_env_split(rotations, c_a_env, b_a_env, ddim_list, dbright_list, c_a_rvir, b_a_rvir)
-    statistics_percentiles(rotations, c_a_env, b_a_env, ddim_list, dbright_list, c_a_rvir, b_a_rvir)
+    dbright_list, mpeak_list, corotations = find_neighbors(f, rvir, mvir, x, y, z,
+                                            target_ids, M_B, mpeak, vx, vy, vz)
+    ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations = convert(c_a_env,
+                            b_a_env, c_a_rvir, b_a_rvir, ddim_list, dbright_list, corotations)
+    #various_plots(ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations, mpeak_list)
+    # user innput list of arguments
+    props, MW_data, labels = user_choice(ca_8, ba_8, ddim, dbright, dratio,
+                                         ca_rvir, ba_rvir, corotations)
+    sat_MW_comparison(props, MW_data, labels)  # use list as arguments
+    stat_test(corotations, ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir)
+
+
+def various_plots(ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations, mpeak_list):
+    scatter(ca_8, ba_8, ddim, dbright)
+    trial_plots(ca_8, ca_rvir, ddim, mpeak_list)
+    statistics_sat_split(ca_rvir, ca_8, ba_8, ddim, dbright)
+    statistics_env_split(corotations, ca_8, ba_8, ddim, dbright, ca_rvir, ba_rvir)
+    statistics_percentiles(corotations, ca_8, ba_8, ddim, dbright, ca_rvir, ba_rvir)
+
+
+def convert(c_a_env, b_a_env, c_a_rvir, b_a_rvir, ddim_list, dbright_list, corotations):
+    # environment properties
+    ca_8 = np.asarray(c_a_env)
+    ba_8 = np.asarray(b_a_env)
+    ddim = np.asarray(ddim_list)
+    dbright = np.asarray(dbright_list)
+    dratio = ddim / dbright
+    # satellite properties
+    ca_rvir = np.asarray(c_a_rvir)
+    ba_rvir = np.asarray(b_a_rvir)
+    corotations = np.asarray(corotations)
+    return ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations
+
 
 def get_file_data():
     """ This function reads in data from a high resolution simulation
@@ -36,13 +66,13 @@ def get_file_data():
     M_B = match_B(mpeak, sigma, mass_def="mpeak", LF="Neuzil", data_dir='.')
     return f, x, y, z, mvir, rvir, id, upid, M_B, mpeak, vx, vy, vz
 
+
 # critical vs mean density: need for universe to not be curved vs. average in a given volume
 # density profile for DM halo: find a place where density drops below __x critical, mean density... that's the radius
-# change to search via MAGNITUDES
 def find_hosts(mvir, upid, M_B):
     """Find objects with mass of 10e13 Msun/h that are NOT subhaloes.
-
     Now, Hosts should be in the magnitude range -21.25 < M_B < -20.5.
+    Search via magnitudes.
     """
     target_ids = np.where((-21.25 < M_B) & (M_B < -20.5) & (upid == -1))
     host_masses = mvir[target_ids]
@@ -195,8 +225,9 @@ def sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax):
             count += 1
     pos_ratio = count / len(L_direction)
     neg_ratio = 1 - pos_ratio
-    rotation = np.abs(pos_ratio - neg_ratio)
-    return rotation
+    #corotation = np.max(pos_ratio, neg_ratio)
+    corotation = np.abs(pos_ratio - neg_ratio)
+    return corotation
 
 def new_tensor(sub_dx, sub_dy, sub_dz, vx, vy, vz):
     # compare to other method
@@ -261,10 +292,6 @@ def unit_tests(i):
     vy_test = np.random.rand(100)
     vz_test = np.random.rand(100)
     c_a_test, b_a_test, rotations_test = new_tensor(test_dx, test_dy, test_dz, vx_test, vy_test, vz_test)
-    if i == 30:
-        print('ca test', c_a_test) # smaller = flatter configuration
-        print('ba test', b_a_test)
-        print('Ldir test', rotations_test) # getting about 1 every time, means everything is pointed in same direction
 
 
 def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
@@ -294,7 +321,7 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
     c_a_Rvir = []     # axis ratios of individual host haloes, not environmental
     b_a_Rvir = []
     mpeak_host_list = []
-    rotations = []
+    corotations = []
     i = 0
     for id in target_ids[0]:
         host_point = points[id]
@@ -318,13 +345,10 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
         sub_dx = sub_x - host_point[0]
         sub_dy = sub_y - host_point[1]
         sub_dz = sub_z - host_point[2]
-
         sub_vx = vx[sub_idx] - vx[id]
         sub_vy = vy[sub_idx] - vy[id]
         sub_vz = vz[sub_idx] - vz[id]
-
         #unit_tests(i)
-
         c_a_rvir, b_a_rvir = get_axes(sub_dx, sub_dy, sub_dz, i)
         M_B_sub = M_B[sub_idx]
         mpeak_host = mpeak[id]
@@ -344,16 +368,10 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
             ddim_list.append(ddim)
             dbright_list.append(dbright)
             mpeak_host_list.append(mpeak_host)
-            c_a_new, b_a_new, rotation = new_tensor(sub_dx, sub_dy, sub_dz, sub_vx, sub_vy, sub_vz)
-            rotations.append(rotation)
-        """
-        if i == 30:
-            print('c/a NEW', c_a_new)
-            print('b/a NEW', b_a_new)
-            print('Ldir', rotation)
-        """
+            c_a_new, b_a_new, corotation = new_tensor(sub_dx, sub_dy, sub_dz, sub_vx, sub_vy, sub_vz)
+            corotations.append(corotation)  # 0 means no corotation, half in one direction half in another
         i += 1
-    return c_a_env, b_a_env, c_a_Rvir, b_a_Rvir, ddim_list, ddim_rvir_ratios, dbright_list, mpeak_host_list, rotations
+    return c_a_env, b_a_env, c_a_Rvir, b_a_Rvir, ddim_list, ddim_rvir_ratios, dbright_list, mpeak_host_list, corotations
 
 
 def scatter(c_a_list, b_a_list, ddim_list, dbright_list):
@@ -419,15 +437,22 @@ def trial_plots(c_a_env, c_a_Rvir, ddim_list, mpeak_list):
     # that indicates a plane of satellites (host haloes)?
 
 
-def group(vara, varb, varc, ax, i, j, color1, color2, per1, per2, labela, labelb, labelc):
+def group(vara, varb, varc, ax, i, j, color1, color2, per1, per2, labela, labelb, labelc, setax, upperx, uppery):
     if i & j == 0:
-        small_ratio_lim = vara < np.percentile(vara, per1)
-        large_ratio_lim = vara > np.percentile(vara, per2)
-        ax.scatter(varb[large_ratio_lim], varc[large_ratio_lim], marker='.', color=color1,
-                         label='largest ' + str(per1) + '% ' + labela)
-        ax.scatter(varb[small_ratio_lim], varc[small_ratio_lim], marker='.', color=color2,
-                         label='smallest ' + str(per1) + '% ' + labela)
+        if vara is not None:
+            small_ratio_lim = vara < np.percentile(vara, per1)
+            large_ratio_lim = vara > np.percentile(vara, per2)
+            ax.scatter(varb[large_ratio_lim], varc[large_ratio_lim], marker='.', color=color1,
+                       label='largest ' + str(per1) + '% ' + labela)
+            ax.scatter(varb[small_ratio_lim], varc[small_ratio_lim], marker='.', color=color2,
+                       label='smallest ' + str(per1) + '% ' + labela)
+        else:
+            ax.scatter(varb, varc, label=None)
+            ax.scatter(varb, varc, label=None)
         ax.axis('square')
+        if setax is True:
+            ax.set_ylim(0, uppery)
+            ax.set_xlim(0, upperx)
         ax.set_xlabel(labelb, fontsize=8)
         ax.set_ylabel(labelc, fontsize=8)
         ax.tick_params(axis="x", labelsize=8)
@@ -464,110 +489,383 @@ def group(vara, varb, varc, ax, i, j, color1, color2, per1, per2, labela, labelb
         ax.legend(loc="best", fontsize=5)
 
 
-def statistics_sat_split(c_a_Rvir, c_a_env, b_a_env, ddim_list, dbright_list):
-    """ Cosmetic changes to 16 plots:
-
-            Make plots square: equal aspect ratios
-
-        can break into multiple plots
-
-            Change markers to opaque small dots
-
-        Make into a 2D histogram instead of scatter, ax[1,1].hist2d(b_a_list, c_a_list, bins=30, cmap='Greys')
-
-            MAKE UNIVERSAL!
+def statistics_sat_split(ca_rvir, ca_8, ba_8, ddim, dbright):
+    """ Displays 18 plots of the distribution of local and environmental halo properties.
+    Hosts that are displayed are in the top or bottom 25th percentile of a given
+    halo property, so they are essentially "split" on this property variable.
     """
-    c_a_rvir = np.asarray(c_a_Rvir)
-    c_a_8 = np.asarray(c_a_env)
-    b_a_8 = np.asarray(b_a_env)
-    ddim = np.asarray(ddim_list)
-    dbright = np.asarray(dbright_list)
-
     fig, ax = plt.subplots(6, 3, figsize=(13,13), dpi=90, tight_layout=False)
     color1 = 'red'
     color2 = 'green'
+    upperx = 1.0
+    uppery = 1.0
     for i in range(3):
-        group(c_a_rvir, ddim, dbright, ax[0][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{dim}$', r'$\Delta_{bright}$')
-        group(c_a_rvir, ddim, c_a_8, ax[1][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{dim}$', r'$(c/a)_{8Mpc}$')
-        group(c_a_rvir, ddim, b_a_8, ax[2][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{dim}$', r'$(b/a)_{8Mpc}$')
-        group(c_a_rvir, dbright, c_a_8, ax[3][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{bright}$', r'$(c/a)_{8Mpc}$')
-        group(c_a_rvir, dbright, b_a_8, ax[4][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{bright}$', r'$(b/a)_{8Mpc}$')
-        group(c_a_rvir, c_a_8, b_a_8, ax[5][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$(c/a)_{8Mpc}$', r'$(b/a)_{8Mpc}$')
+        group(ca_rvir, ddim, dbright, ax[0][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{dim}$', r'$\Delta_{bright}$', False, upperx, uppery)
+        group(ca_rvir, ddim, ca_8, ax[1][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{dim}$', r'$(c/a)_{8Mpc}$', False, upperx, uppery)
+        group(ca_rvir, ddim, ba_8, ax[2][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{dim}$', r'$(b/a)_{8Mpc}$', False, upperx, uppery)
+        group(ca_rvir, dbright, ca_8, ax[3][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{bright}$', r'$(c/a)_{8Mpc}$', False, upperx, uppery)
+        group(ca_rvir, dbright, ba_8, ax[4][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$\Delta_{bright}$', r'$(b/a)_{8Mpc}$', False, upperx, uppery)
+        group(ca_rvir, ca_8, ba_8, ax[5][i], i, i, color1, color2, 25, 75, r'$(c/a)_{rvir}$', r'$(c/a)_{8Mpc}$', r'$(b/a)_{8Mpc}$', False, upperx, uppery)
     fig.suptitle('Distributions of Satellites and Their Environmental Properties', y=0.95)
     plt.subplots_adjust(wspace=-0.1, hspace=0.45)
     plt.show()
 
 
-def statistics_env_split(rotations, c_a_env, b_a_env, ddim_list, dbright_list, ca_rvir, ba_rvir):
-    """X and Y axes are satellite properties, split on environment
+def statistics_env_split(corotations, ca_8, ba_8, ddim, dbright, ca_rvir, ba_rvir):
+    """Displays 18 plots of the distribution of host halo local/satellite properties.
+    Hosts that are displayed are in the top or bottom 25th percentile of a given
+    environmental host property, so they are essentially "split" on this property variable.
 
         Split on different percentiles... do for each set of 3 variables
-
         Interested in things in one corner vs another corner of plot
-
         Come up with number or metric representative of MW environment and find environments in simulation that could be analogs
-
-    Clean up code.
     """
-    # environment properties, add triaxiality
-    c_a_8 = np.asarray(c_a_env)
-    b_a_8 = np.asarray(b_a_env)
-    ddim = np.asarray(ddim_list)
-    dbright = np.asarray(dbright_list)
-    dratio = ddim/dbright
-    # satellite properties
-    ca_rvir = np.asarray(ca_rvir)
-    ba_rvir = np.asarray(ba_rvir)
-    rotations = np.asarray(rotations)
-
+    dratio = ddim / dbright
     fig, ax = plt.subplots(2, 3, figsize=(8, 8), dpi=100, tight_layout=True)
     color1 = 'orange'
     color2 = 'blue'
     i = 0
     j = 0
-    group(c_a_8, ca_rvir, rotations, ax[0][i], i, i, color1, color2, 25, 75, r'$(c/a)_{8Mpc}$', r'$(c/a)_{rvir}$', 'rotation')
-    group(b_a_8, ba_rvir, rotations, ax[0][i+1], i, i, color1, color2, 25, 75, r'$(b/a)_{8Mpc}$', r'$(b/a)_{rvir}$', 'rotation')
-    group(ddim, ca_rvir, rotations, ax[0][i+2], i, i, color1, color2, 25, 75, r'$\Delta_{dim}$', r'$(c/a)_{rvir}$', 'rotation')
-    group(dbright, ca_rvir, rotations, ax[1][i], i, i, color1, color2, 25, 75, r'$\Delta_{bright}$', r'$(c/a)_{rvir}$', 'rotation')
-    group(dratio, ca_rvir, rotations, ax[1][i+1], i, i, color1, color2, 25, 75, r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', 'rotation')
-    group(dratio, ca_rvir, ba_rvir, ax[1][i+2], i, i, color1, color2, 25, 75, r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', r'$(b/a)_{rvir}$')
-    fig.suptitle('Distributions of Local Satellite Properties split on Environmental Property Percentiles',  y=0.95)
+    upperx = 1.0
+    uppery = 1.0
+    group(ca_8, ca_rvir, corotations, ax[0][i], i, i, color1, color2, 25, 75,
+          r'$(c/a)_{8Mpc}$', r'$(c/a)_{rvir}$', 'rotation', False, upperx, uppery)
+    group(ba_8, ba_rvir, corotations, ax[0][i+1], i, i, color1, color2, 25, 75,
+          r'$(b/a)_{8Mpc}$', r'$(b/a)_{rvir}$', 'rotation', False, upperx, uppery)
+    group(ddim, ca_rvir, corotations, ax[0][i+2], i, i, color1, color2, 25, 75,
+          r'$\Delta_{dim}$', r'$(c/a)_{rvir}$', 'rotation', False, upperx, uppery)
+    group(dbright, ca_rvir, corotations, ax[1][i], i, i, color1, color2, 25, 75,
+          r'$\Delta_{bright}$', r'$(c/a)_{rvir}$', 'rotation', False, upperx, uppery)
+    group(dratio, ca_rvir, corotations, ax[1][i+1], i, i, color1, color2, 25, 75,
+          r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', 'rotation', False, upperx, uppery)
+    group(dratio, ca_rvir, ba_rvir, ax[1][i+2], i, i, color1, color2, 25, 75,
+          r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', r'$(b/a)_{rvir}$', False, upperx, uppery)
+    fig.suptitle('Distributions of Local Satellite Properties split on '
+                 'Environmental Property Percentiles',  y=0.95)
     plt.show()
 
-def statistics_percentiles(rotations, c_a_env, b_a_env, ddim_list, dbright_list, ca_rvir, ba_rvir):
+"""Combine Monte Carlo test with ...
+        1) KS test
+        2) AD test
+    Comparing random values againt empirical distribution (full set of satellite statistics).
+    Why? To confirm how good the pvalue of the KS test is.
+"""
+def empirical_KS(full_sample, subsample, N_loops):
+    """ The null-hypothesis for the KT test is that the distributions are the same.
+        Thus, the lower your p value the greater the statistical evidence you have to
+        reject the null hypothesis and conclude the distributions are different.
     """
-    """
-    # environment properties, add triaxiality
-    c_a_8 = np.asarray(c_a_env)
-    b_a_8 = np.asarray(b_a_env)
-    ddim = np.asarray(ddim_list)
-    dbright = np.asarray(dbright_list)
-    dratio = ddim/dbright
-    # satellite properties
-    ca_rvir = np.asarray(ca_rvir)
-    ba_rvir = np.asarray(ba_rvir)
-    rotations = np.asarray(rotations)
+    stat_KS, pvalue = stats.kstest(subsample, full_sample)
+    count = 0
+    for i in range(N_loops):
+        num_points = len(subsample)
+        # samples won't contain the same points multiple times
+        ran_sample = np.random.choice(full_sample, num_points, replace=True)
+        stat_emp, pvalue_emp = stats.kstest(ran_sample, full_sample)
+        if stat_emp > stat_KS:
+            count += 1
+    updated_pvalue = count / N_loops
+    return updated_pvalue, pvalue
 
-    fig, ax = plt.subplots(3, 6, figsize=(14,14), dpi=100, tight_layout=False)
+
+def empirical_AD(full_sample, subsample, N_loops):
+    """An approximate significance level at which the null hypothesis for the provided
+        samples can be rejected. The value is floored / capped at 0.1% / 25%.
+        """
+    stat_AD, critvalue, sigvalue = stats.anderson_ksamp([subsample, full_sample])
+    count = 0
+    for i in range(N_loops):
+        num_points = len(subsample)
+        # samples won't contain the same points multiple times
+        ran_sample = np.random.choice(full_sample, num_points, replace=True)
+        stat_emp, critvalue_emp, sigvalue_emp = stats.anderson_ksamp([ran_sample, full_sample])
+        if stat_emp > stat_AD:
+            count += 1
+    updated_pvalue = count / N_loops
+    return updated_pvalue
+
+
+def individual(vara, varb, ax, per1, per2, labela, labelb, setax, upperx,
+               uppery, bins, subtitle, colors, xtitle, ytitle):
+    sm_ratio_lim = vara < np.percentile(vara, per1)
+    lg_ratio_lim = vara > np.percentile(vara, per2)
+    N_loops = 100
+    lg_pvalue_KS, p = empirical_KS(varb, varb[lg_ratio_lim], N_loops)
+    sm_pvalue_KS, p = empirical_KS(varb, varb[sm_ratio_lim], N_loops)
+    lg_pvalue_AD = empirical_AD(varb, varb[lg_ratio_lim], N_loops)
+    sm_pvalue_AD = empirical_AD(varb, varb[sm_ratio_lim], N_loops)
+    # each of these curves are CDFs
+    ax.hist(varb[lg_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
+            range=(0,upperx), color=colors[0], label='top KS pvalue ' + str(round(lg_pvalue_KS,2)))
+    ax.hist(varb[lg_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
+            range=(0, upperx),color=colors[0], label='top AD pvalue ' + str(round(lg_pvalue_AD,2)))
+    ax.hist(varb[sm_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
+            range=(0,upperx), color=colors[1], label='bot KS pvalue ' + str(round(sm_pvalue_KS,2)))
+    ax.hist(varb[sm_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
+            range=(0, upperx),color=colors[1], label='bot AD pvalue ' + str(round(sm_pvalue_AD,2)))
+    ax.hist(varb, bins=bins, cumulative=True, density=True, histtype='step', color=colors[2])
+    ax.axis('square')
+    if setax is True:
+        ax.set_ylim(0, uppery)
+        ax.set_xlim(0, upperx)
+    if subtitle is True:
+        ax.set_title('Split on ' + labela, fontsize=10)
+    if xtitle is True:
+        ax.set_xlabel(labelb, fontsize=10)
+    if ytitle is True:
+        ax.set_ylabel('N_hosts', fontsize=10)
+    ax.tick_params(axis="x", labelsize=8)
+    ax.tick_params(axis="y", labelsize=8)
+    ax.legend(loc="upper left", fontsize=5)
+    #lines, labels = ax.get_legend_handles_labels()
+
+def statistics_percentiles(corotations, ca_8, ba_8, ddim, dbright, ca_rvir, ba_rvir):
+    """ Creating another 18 plots that splits only on environmental variable and plots satellite
+    variable properties on the x and y axes. First row of plots splits on the top and bottom 5th
+    percentile, then 10th percentile, then 25th.
+    """
+    dratio = ddim / dbright
+    fig, ax = plt.subplots(3, 6, figsize=(14,14), dpi=100, tight_layout=True)
     color1 = 'purple'
     color2 = 'pink'
     i = 0
     j = 0
+    upperx = 1.1
+    uppery = 1.1
     per_list = [5, 10, 25]
     for per in per_list:
-        group(c_a_8, ca_rvir, rotations, ax[i][0], j, j, color1, color2, per, 100-per, r'$(c/a)_{8Mpc}$', r'$(c/a)_{rvir}$', 'rotation')
-        group(b_a_8, ba_rvir, rotations, ax[i][1], j, j, color1, color2, per, 100-per, r'$(b/a)_{8Mpc}$', r'$(b/a)_{rvir}$', 'rotation')
-        group(ddim, ca_rvir, rotations, ax[i][2], j, j, color1, color2, per, 100-per, r'$\Delta_{dim}$', r'$(c/a)_{rvir}$', 'rotation')
-        group(dbright, ca_rvir, rotations, ax[i][3], j, j, color1, color2, per, 100-per, r'$\Delta_{bright}$', r'$(c/a)_{rvir}$', 'rotation')
-        group(dratio, ca_rvir, rotations, ax[i][4], j, j, color1, color2, per, 100-per, r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', 'rotation')
-        group(dratio, ca_rvir, ba_rvir, ax[i][5], j, j, color1, color2, per, 100-per, r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', r'$(b/a)_{rvir}$')
+        group(ca_8, ca_rvir, corotations, ax[i][0], j, j, color1, color2, per, 100-per,
+              r'$(c/a)_{8Mpc}$', r'$(c/a)_{rvir}$', 'corotation', True, upperx, uppery)
+        group(ba_8, ba_rvir, corotations, ax[i][1], j, j, color1, color2, per, 100-per,
+              r'$(b/a)_{8Mpc}$', r'$(b/a)_{rvir}$', 'corotation', True, upperx, uppery)
+        group(ddim, ca_rvir, corotations, ax[i][2], j, j, color1, color2, per, 100-per,
+              r'$\Delta_{dim}$', r'$(c/a)_{rvir}$', 'corotation', True, upperx, uppery)
+        if i == 0 or i == 1:
+            group(None, None, None, ax[i][3], j, j, color1, color2, None, None,
+                  None, None, None, True, upperx, uppery)
+        if i == 2:
+            group(dbright, ca_rvir, corotations, ax[i][3], j, j, color1, color2, per, 100-per,
+                  r'$\Delta_{bright}$', r'$(c/a)_{rvir}$', 'corotation', True, upperx, uppery)
+        group(dratio, ca_rvir, corotations, ax[i][4], j, j, color1, color2, per, 100-per,
+              r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', 'corotation', True, upperx, uppery)
+        group(dratio, ca_rvir, ba_rvir, ax[i][5], j, j, color1, color2, per, 100-per,
+              r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', r'$(b/a)_{rvir}$', True, upperx, uppery)
         i+=1
-    fig.suptitle('Distributions of Local Satellite Properties split on Various Environmental Property Percentiles',  y=0.95)
+    fig.suptitle('Scatter Distributions of Satellite Properties split on Environmental '
+                 'Property Percentiles',  y=0.95)
+    plt.subplots_adjust(wspace=0.3, hspace=0.4)
+    plt.show()
+
+    #### above: scatter, below: histogram ####
+
+    fig, ax = plt.subplots(3, 6, figsize=(14, 14), dpi=100, tight_layout=True)
+    i = 0
+    upperx = 1.0
+    uppery = 1.0
+    bins = 200
+    per_list = [5, 10, 25]
+    colors5 = ['indianred', 'deepskyblue', 'black']
+    colors10 = ['forestgreen', 'purple', 'black']
+    colors25 = ['crimson', 'darkturquoise', 'black']
+    colors = [colors5, colors10, colors25]
+    ytitle = False
+    xtitle = False
+    setax = True
+    for per in per_list:
+        if i == 0:
+            title = True
+        if i == 1 or i == 2:
+            title = False
+        if i == 2:
+            xtitle = True
+        individual(ca_8, ca_rvir, ax[i][0], per, 100 - per, r'$(c/a)_{8Mpc}$',
+              r'$(c/a)_{rvir}$', setax, upperx, uppery, bins, title, colors[i], xtitle, True)
+        individual(ca_8, corotations, ax[i][1], per, 100 - per, r'$(c/a)_{8Mpc}$',
+              r'$f_{corotation}$', setax, upperx, uppery, bins, title, colors[i], xtitle, ytitle)
+        individual(ddim, ca_rvir, ax[i][2], per, 100 - per, r'$\Delta_{dim}$',
+              r'$(c/a)_{rvir}$', setax, upperx, uppery, bins, title, colors[i], xtitle, ytitle)
+        individual(ddim, corotations, ax[i][3], per, 100 - per, r'$\Delta_{dim}$',
+              r'$f_{corotation}$', setax, upperx, uppery, bins, title, colors[i], xtitle, ytitle)
+        individual(dratio, ca_rvir, ax[i][4], per, 100 - per, r'$\Delta_{ratio}$',
+              r'$(c/a)_{rvir}$', setax, upperx, uppery, bins, title, colors[i], xtitle, ytitle)
+        individual(dratio, corotations, ax[i][5], per, 100 - per, r'$\Delta_{ratio}$',
+              r'$f_{corotation}$', setax, upperx, uppery, bins, title, colors[i], xtitle, ytitle)
+        i += 1
+    fig.suptitle('Histogram Distributions of Satellite Properties split on Environmental '
+                 'Property Percentiles',
+                 y=0.97)
+    line1 = mlines.Line2D([], [], color='indianred', label='top 5%')
+    line2 = mlines.Line2D([], [], color='deepskyblue', label='bottom 5%')
+    line3 = mlines.Line2D([], [], color='forestgreen', label='top 10%')
+    line4 = mlines.Line2D([], [], color='purple', label='bottom 10%')
+    line5 = mlines.Line2D([], [], color='crimson', label='top 25%')
+    line6 = mlines.Line2D([], [], color='darkturquoise', label='bottom 25%')
+    line7 = mlines.Line2D([], [], color='black', label='all hosts')
+    fig.legend(handles=[line1, line2, line3, line4, line5, line6, line7], fontsize=6)
     plt.subplots_adjust(wspace=0.3, hspace=0.4)
     plt.show()
 
 
+def stat_test(corotations, ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir):
+    fig, ax = plt.subplots(2, 2, dpi=150)
+    fig.suptitle('Satellite to Environment Probability Values with Random Sampling')
+    percent = int(input("Enter a percentage between 0 and 100: "))
+    env = [ca_8, ba_8, ddim, dbright, dratio]
+    env_label = [r'$(c/a)_{8Mpc}$', r'$(b/a)_{8Mpc}$', r'$\Delta_{dim}$', r'$\Delta_{bright}$', r'$\Delta_{ratio}$']
+    sat = [ca_rvir, ba_rvir, corotations]
+    sat_label = [r'$(c/a)_{rvir}$', r'$(b/a)_{rvir}$' , r'$f_{corotation}$']
+    a = int(input("Choose an environmental property, ca_8, ba_8, ddim, dbright, dratio by choosing 0,1,2,3, or 4: "))
+    b = int(input("Choose a satellite property, ca_rvir, ba_rvir, corotations by entering 0,1, or 2: "))
+    vara = env[a]
+    varb = sat[b]
+    labela = env_label[a]
+    labelb = sat_label[b]
+    N_loops = [1, 10, 100, 10**3, 10**4]
+    bot_ratio_lim = vara < np.percentile(vara, percent)
+    top_ratio_lim = vara > np.percentile(vara, 100-percent)
+    top_KS_pvalues = []
+    bot_KS_pvalues = []
+    top_AD_pvalues = []
+    bot_AD_pvalues = []
+    og_KS_pvalue = []
+    for N in N_loops:
+        top_KS, p = empirical_KS(varb, varb[top_ratio_lim], N)
+        bot_KS, p = empirical_KS(varb, varb[bot_ratio_lim], N)
+        top_AD = empirical_AD(varb, varb[top_ratio_lim], N)
+        bot_AD = empirical_AD(varb, varb[bot_ratio_lim], N)
+        top_KS_pvalues.append(top_KS)
+        bot_KS_pvalues.append(bot_KS)
+        top_AD_pvalues.append(top_AD)
+        bot_AD_pvalues.append(bot_AD)
+        og_KS_pvalue.append(p)
+    ax[0][0].set_title('KS Test Satellite ' + labelb + ' Split on ' + labela, fontsize=7)
+    ax[0][0].plot(N_loops, top_KS_pvalues, marker='.', color='red', label='top '+str(percent)+'%')
+    ax[0][0].plot(N_loops, og_KS_pvalue, marker='.', color='blue', label='no randomization')
+    ax[0][0].set_ylabel('pvalue')
+    ax[1][0].plot(N_loops, bot_KS_pvalues, marker='.', color='orange', label='bottom '+str(percent)+'%')
+    ax[1][0].plot(N_loops, og_KS_pvalue, marker='.', color='blue', label='no randomization')
+    ax[1][0].set_xlabel('N_loops')
+    ax[1][0].set_ylabel('pvalue')
+    ax[0][1].set_title('AD Test Satellite ' + labelb + ' Split on ' + labela, fontsize=7)
+    ax[0][1].plot(N_loops, top_AD_pvalues, marker='.', color='red', label='top '+str(percent)+'%')
+    ax[1][1].plot(N_loops, bot_AD_pvalues, marker='.', color='orange', label='bottom '+str(percent)+'%')
+    ax[1][1].set_xlabel('N_loops')
+    j = 0
+    k = 0
+    for i in range(4):
+        if i == 1 or i == 3:
+            k = 1
+        if i == 2:
+            j = 1
+            k = 0
+        ax[j][k].set_ylim(0, 1.0)
+        ax[j][k].legend(loc="best", fontsize=5)
+        ax[j][k].set_xscale("log")
+    plt.show()
 
+
+def project(x, y, z, px_hat, py_hat, pz_hat):
+    """ project projects the vectors given by (x, y, z) along the orthognoal
+    unit vectors px_hat, py_hat, and pz_hat.
+    """
+    vec = np.array([x, y, z]).T
+    return np.dot(vec, px_hat), np.dot(vec, py_hat), np.dot(vec, pz_hat)
+
+def ellipse_axes(points, w=None):
+    x, y, z = points
+    if w is None: w = np.ones(len(x))
+
+    M11, M12, M13 = np.sum(x*x*w), np.sum(x*y*w), np.sum(x*z*w)
+    M21, M22, M23 = M12,           np.sum(y*y*w), np.sum(y*z*w)
+    M31, M32, M33 = M13,           M23,           np.sum(z*z*w)
+    M = np.array([
+        [M11,M12,M13],
+        [M21,M22,M23],
+        [M31,M32,M33]
+    ])
+def median_axes(points, w=None):
+    """ median_axes takes a set of points (x, y, z) and weights, w,
+    and returns the median length along the three axes of the point distribution
+    and the vectors pointing along each of these axes
+    """
+    _, vec = ellipse_axes(points, w)
+    x, y, z = points
+    x0, x1, x2 = disk_finder.project(x, y, z, vec[0], vec[1], vec[2])
+    def med(xi): return np.median(np.abs(xi))
+    return np.array([med(x0), med(x1), med(x2)]), vec
+
+def median_axis():
+    """ First, we measure the eigenvectors of Mi j and transform our points
+    into a coordinate system which aligns with these axes. We then
+    measure the median distance from the origin along each axis i:
+    mi = median(|xi|). We take the axis ratios of the distribution to
+    be mi/mj for each pair of axes i, j. We favor this method for two
+    reasons. First, it more accurately captures the qualitative shape of
+    the Local Volume, as shown in Fig. A1. Second, it is much less
+    sensitive to outliers: the sampling error on axis ratios estimated by
+    bootstrap resampling is a factor of 50 per cent smaller when using this
+    median axis ratios method.
+    """
+def user_choice(ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations):
+    props = [ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations]
+    # from table 3 Neuzil et al 2019
+    MW = [0.163, 0.786, 1.699, 5.190, 1, 1, 1]
+    labels = [r'$(c/a)_{8Mpc}$', r'$(b/a)_{8Mpc}$', r'$\Delta_{dim}$', r'$\Delta_{bright}$',
+              r'$\Delta_{ratio}$', r'$(c/a)_{rvir}$', r'$(b/a)_{rvir}$', r'$f_{corotation}$']
+    propsa = []
+    MWa = []
+    labelsa = []
+    for i in range(len(props)):
+        a = str(input("Choose properties by entering a number 0-7 corresponding to ca_8, ba_8, "
+                      "ddim, dbright, dratio, ca_rvir, ba_rvir, or corotations. Enter DONE after "
+                      "final choice or ALL if you'd like all data considered: "))
+        if i == 0:
+            while a == 'DONE':
+                a = str(input('User must enter ALL or a number 0-7: '))
+            if a == 'ALL':
+                return props, MW, labels
+        if i != 0:
+            if a == 'DONE':
+                break
+            while a == 'ALL':
+                a = str(input('User must enter DONE or a number 0-7: '))
+        if a != 'DONE' or 'ALL':
+            a = int(a)
+            propsa.append(props[a])
+            MWa.append(MW[a])
+            labelsa.append(labels[a])
+    return propsa, MWa, labelsa
+
+
+def sat_MW_comparison(props, MW_data, labels):
+    """Create a script that determines and ranks halo similarity to Milkyway:
+    • Involves rankings from multivariable properties
+    • Give several ideas
+    """
+    # normalize arrays between 0 and 1
+    norm_data = []
+    i = 0
+    for prop in props:
+        prop = np.asarray(prop)
+        std = np.std(prop)  # a measure of the spread of a distribution
+        prop /= std
+        if i < 3:
+            np.insert(prop, 0, MW_data[i])  # TRY STANDARD DEVIATION
+        norm_prop = (prop - np.amin(prop)) / (np.amax(prop) - np.amin(prop))
+        norm_data.append(norm_prop)
+        i +=1
+    ca_dist = np.square(norm_data[0] - norm_data[0][0])
+    ba_dist = np.square(norm_data[1] - norm_data[1][0])
+    ddim_dist = np.square(norm_data[2] - norm_data[2][0])
+    dbright_dist = np.square(norm_data[3] - norm_data[3][0])
+    sum = ca_dist + ba_dist + ddim_dist + dbright_dist
+    euc_dist = np.delete(np.sqrt(sum), 0)  # using the euclidean distance equation
+    most_similar_halo = np.amin(euc_dist)
+    least_similar_halo = np.amax(euc_dist)
+    most_index = np.argmax(euc_dist)
+    least_index = np.argmin(euc_dist)
+    print('least distance:', most_similar_halo, 'most distance:', least_similar_halo)
+    print('most similar halo index:', most_index, 'least similar halo index:', least_index)
 
 
 if __name__ == '__main__':
