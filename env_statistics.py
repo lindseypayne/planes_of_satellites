@@ -20,47 +20,53 @@ sigma = 0   # the scatter between halo mass and galaxy luminosity
 def main():
     f, x, y, z, mvir, rvir, id, upid, M_B, mpeak, vx, vy, vz = get_file_data()
     host_masses, target_ids = find_hosts(mvir, upid, M_B)
+
     c_a_env, b_a_env, c_a_rvir, b_a_rvir, c_a_med, b_a_med, ddim_list, \
-    dbright_list, mpeak_list, corotations = find_neighbors(f, rvir, mvir, x, y, z,
-                                            target_ids, M_B, mpeak, vx, vy, vz)
+    dbright_list, mpeak_list, corotations, minor_ax_vir, minor_ax_8 = \
+        find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz)
+
     ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, ca_med, ba_med,\
-    corotations, all_props, all_labels = convert(c_a_env, b_a_env, c_a_rvir,
-    b_a_rvir, c_a_med, b_a_med, ddim_list, dbright_list, corotations)
-    #various_plots(ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations, mpeak_list)
-    #props, MW_data, labels = user_choice(ca_med, ba_med, ddim, dbright, dratio)
-    #sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba_rvir, corotations)
-    stat_test(corotations, ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir)
+    corotations, all_props, all_labels, minor_vir, minor_8 = convert(c_a_env, b_a_env, c_a_rvir,
+    b_a_rvir, c_a_med, b_a_med, ddim_list, dbright_list, corotations, minor_ax_vir, minor_ax_8)
+
+    various_plots(ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations, mpeak_list)
+    props, MW_data, labels = user_choice(ca_med, ba_med, ddim, dbright, dratio)
+    sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba_rvir, corotations)
+    alignment(all_labels, all_props, [c_a_med, b_a_med], [0.163, 0.786], ca_rvir, minor_vir, minor_8, 5)
+
+    #stat_test(corotations, ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir)
     KS_2D(ca_rvir, corotations, [ca_8, ba_8, ddim, dratio],
           [r'$(c/a)_{8Mpc}$', r'$(b/a)_{8Mpc}$', r'$\Delta_{dim}$', r'$\Delta_{ratio}$'], 5)
 
 
 
 def various_plots(ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations, mpeak_list):
-    scatter2d(ca_8, ba_8, ddim, dbright)
-    trial_plots(ca_8, ca_rvir, ddim, mpeak_list)
-    statistics_sat_split(ca_rvir, ca_8, ba_8, ddim, dbright)
-    statistics_env_split(corotations, ca_8, ba_8, ddim, dbright, ca_rvir, ba_rvir)
+    #scatter2d(ca_8, ba_8, ddim, dbright)
+    #trial_plots(ca_8, ca_rvir, ddim, mpeak_list)
+    #statistics_sat_split(ca_rvir, ca_8, ba_8, ddim, dbright)
+    #statistics_env_split(corotations, ca_8, ba_8, ddim, dbright, ca_rvir, ba_rvir)
     statistics_percentiles(corotations, ca_8, ba_8, ddim, dbright, ca_rvir, ba_rvir)
 
 
-def convert(c_a_env, b_a_env, c_a_rvir, b_a_rvir, c_a_med, b_a_med, ddim_list, dbright_list, corotations):
+def convert(c_a_env, b_a_env, c_a_rvir, b_a_rvir, c_a_med, b_a_med, ddim_list, dbright_list, corotations, minor_ax_vir, minor_ax_8):
     # environment properties
-    ca_8 = np.asarray(c_a_env)
-    ba_8 = np.asarray(b_a_env)
-    ca_med = np.asarray(c_a_med)
-    ba_med = np.asarray(b_a_med)
-    ddim = np.asarray(ddim_list)
-    dbright = np.asarray(dbright_list)
+    ca_8 = np.copy(c_a_env)
+    ba_8 = np.copy(b_a_env)
+    ca_med = np.copy(c_a_med)
+    ba_med = np.copy(b_a_med)
+    ddim = np.copy(ddim_list)
+    dbright = np.copy(dbright_list)
     dratio = ddim / dbright
     # satellite properties
-    ca_rvir = np.asarray(c_a_rvir)
-    ba_rvir = np.asarray(b_a_rvir)
-    corotations = np.asarray(corotations)
-    all_props = [ca_8, ba_8, ca_rvir, ba_rvir, ddim, dbright, dratio]
-    #all_labels = [r'$(c/a)_{8Mpc}$ ', r'$(b/a)_{8Mpc}$ ', r'$(c/a)_{rvir}$ ', r'$(b/a)_{rvir}$ ',
-                  #r'$\Delta_{dim}$ ', r'$\Delta_{bright}$ ', r'$\Delta_{ratio}$']
-    all_labels = ['ca_8', 'ba_8', 'ca_rvir', 'ba_rvir', 'ddim', 'dbright', 'dratio']
-    return ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, ca_med, ba_med, corotations, all_props, all_labels
+    ca_rvir = np.copy(c_a_rvir)
+    ba_rvir = np.copy(b_a_rvir)
+    corotations = np.copy(corotations)
+    all_props = [ca_med, ba_med, ca_rvir, ba_rvir, ddim, dbright, dratio]
+    all_labels = ['ca_med', 'ba_med', 'ca_rvir', 'ba_rvir', 'ddim', 'dbright', 'dratio']
+    minor_vir = np.asarray(minor_ax_vir)
+    minor_8 = np.asarray(minor_ax_8)
+    return ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, ca_med, ba_med, corotations, \
+           all_props, all_labels, minor_vir, minor_8
 
 
 def get_file_data():
@@ -246,13 +252,10 @@ def new_tensor(sub_dx, sub_dy, sub_dz, vx, vy, vz):
     inertia_tensor[2][2] = np.sum(mass * sub_dz * sub_dz) / np.sum(mass)
     # for ellipsoid of uniform density, evalues = Ma^2/5, Mb^2/5, Mc^2/5
     evalues, evectors = np.linalg.eig(inertia_tensor)
-    Ia = evalues[0]
-    Ib = evalues[1]
-    Ic = evalues[2]
     smallest_evalue = np.where(evalues == evalues.min())[0]
     minor_ax = np.reshape(evectors[smallest_evalue], (1,3))
     corotation = sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax)
-    return corotation
+    return corotation, minor_ax
 
 
 def dim_bright_avgs(M_B):
@@ -280,7 +283,7 @@ def unit_tests(i):
     vx_test = np.random.rand(100)
     vy_test = np.random.rand(100)
     vz_test = np.random.rand(100)
-    rotations_test = new_tensor(test_dx, test_dy, test_dz, vx_test, vy_test, vz_test)
+    rotations_test, minor_ax = new_tensor(test_dx, test_dy, test_dz, vx_test, vy_test, vz_test)
 
 
 def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
@@ -312,6 +315,8 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
     dbright_list = []
     mpeak_host_list = []
     corotations = []
+    minor_ax_vir = []
+    minor_ax_8 = []
     i = 0
     for id in target_ids[0]:
         host_point = points[id]
@@ -323,6 +328,10 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
         obj_dx = obj_x - host_point[0]
         obj_dy = obj_y - host_point[1]
         obj_dz = obj_z - host_point[2]
+        obj_vx = vx[object_idx] - vx[id]
+        obj_vy = vy[object_idx] - vy[id]
+        obj_vz = vz[object_idx] - vz[id]
+
         # Computing axis ratios using neighbors, not necessarily subhalo
         c_a_ratio, b_a_ratio, c_a_med, b_a_med = get_axes(obj_dx, obj_dy, obj_dz, i)
         # B magnitudes of each object around the host
@@ -338,6 +347,7 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
         sub_vx = vx[sub_idx] - vx[id]
         sub_vy = vy[sub_idx] - vy[id]
         sub_vz = vz[sub_idx] - vz[id]
+
         #unit_tests(i)
         c_a_rvir, b_a_rvir, _, _ = get_axes(sub_dx, sub_dy, sub_dz, i)
         mpeak_host = mpeak[id]
@@ -355,11 +365,14 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
             ddim_list.append(ddim)
             dbright_list.append(dbright)
             mpeak_host_list.append(mpeak_host)
-            corotation = new_tensor(sub_dx, sub_dy, sub_dz, sub_vx, sub_vy, sub_vz)
+            corotation, minor_vir = new_tensor(sub_dx, sub_dy, sub_dz, sub_vx, sub_vy, sub_vz)
+            _, minor_8 = new_tensor(obj_dx, obj_dy, obj_dz, obj_vx, obj_vy, obj_vz)
+            minor_ax_vir.append(minor_vir)
+            minor_ax_8.append(minor_8)
             corotations.append(corotation)  # 0 means no corotation, half in one direction half in another
         i += 1
     return ca_env, ba_env, ca_rvir, ba_rvir, ca_median, ba_median, ddim_list, \
-           dbright_list, mpeak_host_list, corotations
+           dbright_list, mpeak_host_list, corotations, minor_ax_vir, minor_ax_8
 
 """
 VERY SMALL AXIS RATIO ON PLOT
@@ -819,9 +832,11 @@ def stat_test(corotations, ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir):
     ax.set_ylabel(r'$std(p(N_{loops}))$')
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.plot(N_loops, stds, label='satellite parameter: ' + labelb)
-    ax.plot(N_loops, stds, label='environment parameter: ' + labela)
-    ax.legend(loc="upper right")
+    ax.plot(N_loops, stds)
+    ax.plot(N_loops, stds)
+    comment = mpatches.Patch(edgecolor='black', facecolor='white', label='satellite parameter: ' + labelb)
+    comment2 = mpatches.Patch(edgecolor='black', facecolor='white', label='environment parameter: ' + labela)
+    fig.legend(handles=[comment, comment2], loc="center right", fontsize=8)
     plt.show()
 
 
@@ -975,19 +990,16 @@ def sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba
     :param props: list of environmental properties by which to rank
     :param MW_data: environmental property values for the Milky Way
     """
-    # normalize arrays between 0 and 1
+    # normalize arrays with standard deviation, avoids outliers
     dist_arrays = []
     i = 0
     for prop in props:
-        prop = np.asarray(prop)
-        MW_data = np.asarray(MW_data)
+        prop = np.copy(prop)
+        MW_prop = MW_data[i]
         std = np.std(prop)  # a measure of the spread of a distribution
-        std2 = np.std(MW_data)
         prop /= std
-        MW_data /= std2
-        norm_prop = (prop - np.amin(prop)) / (np.amax(prop) - np.amin(prop))
-        norm_MW = (MW_data - np.amin(MW_data)) / (np.amax(MW_data) - np.amin(MW_data))
-        dist = np.square(norm_prop - norm_MW[i])
+        MW_prop /= std
+        dist = np.square(prop - MW_prop)
         dist_arrays.append(dist)
         i += 1
     sum = 0
@@ -996,8 +1008,8 @@ def sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba
     euc_dist = np.sqrt(sum)  # using the euclidean distance equation
     most_similar_halo = np.amin(euc_dist)
     least_similar_halo = np.amax(euc_dist)
-    most_index = np.argmax(euc_dist)
-    least_index = np.argmin(euc_dist)
+    most_index = np.argmin(euc_dist)
+    least_index = np.argmax(euc_dist)
     print('')
     print('least distance:', most_similar_halo, 'most distance:', least_similar_halo)
     print('most similar halo index:', most_index, 'least similar halo index:', least_index)
@@ -1005,7 +1017,7 @@ def sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba
                        label2=r'$(c/a)_{rvir}$', sim_components=labels)
     statistics_MW_rank(corotations, ba_rvir, euc_dist, label1=r'$f_{corotation}$',
                        label2=r'$(b/a)_{rvir}$', sim_components=labels)
-
+    """
     most_indices = np.argpartition(euc_dist,range(5))[:5]
     list_2d = []
     i = 0
@@ -1014,19 +1026,18 @@ def sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba
         for prop in all_props:
             list.append(prop[index])
         list_2d.append(list)
-        print(all_labels[i], list_2d[i])
+        print('most similar ' + str(i), all_labels, list_2d[i])
         print('')
         i += 1
+    """
     # paper test!! worked
 
-# print out props for top 5 most similar hosts
-# import 2DKS.py
+
 # git clone "github link"
 # or wget "url"
 # leave buggy halo
 # more combos of MW rank !!!
-# use his faster KS test ?
-# clean up find_neighbors
+
 def KS_2D(sat1, sat2, env_list, labels, per):
     """
     Comparing 2d samples: ca_rvir and corotation
@@ -1040,7 +1051,7 @@ def KS_2D(sat1, sat2, env_list, labels, per):
     fig.suptitle('2D Scatter of Satellite Properties Split on Environmental Parameter Percentiles')
     upperx = 0.9
     uppery = 0.6
-    colors = ['red', 'green', 'blue', 'darkviolet']
+    colors = ['red', 'limegreen', 'green', 'darkviolet', 'white', 'black']
     j = 0
     k = 0
     for i in range(len(env_list)):
@@ -1048,7 +1059,6 @@ def KS_2D(sat1, sat2, env_list, labels, per):
         a = np.array([sat1, sat2])
         b = np.array([sat1[env_cut1], sat2[env_cut1]])
         _, p = KS2D.ks2d2s(a, b)
-        print('2d KS test pvalue', p)
         if i == 1 :
             k = 1
         if i == 2:
@@ -1057,12 +1067,70 @@ def KS_2D(sat1, sat2, env_list, labels, per):
         if i == 3:
             j = 1
             k = 1
+        ax[j][k].scatter(sat1, sat2, marker='.', edgecolors=colors[-2], color=colors[-1], label='full satellite sample')
         ax[j][k].scatter(sat1[env_cut1], sat2[env_cut1],  marker='.', color=colors[i], label='KS pvalue ' + str(round(p,2)))
         ax[j][k].set_xlim(0, upperx)
         ax[j][k].set_ylim(0, uppery)
         ax[j][k].set_title('Split on lowest ' + str(per) + '% ' + labels[i])
         ax[j][k].legend(loc='best')
     plt.show()
+
+
+def alignment(all_labels, all_props, props, MW_data, ca_rvir, minor_vir, minor_8, per):
+    dist_arrays = []
+    i = 0
+    for prop in props:
+        prop = np.copy(prop)
+        MW_prop = MW_data[i]
+        std = np.std(prop)  # a measure of the spread of a distribution
+        prop /= std
+        MW_prop /= std
+        dist = np.square(prop - MW_prop)
+        dist_arrays.append(dist)
+        i += 1
+    sum = 0
+    for dist in dist_arrays:
+        sum += dist
+
+    euc_dist = np.sqrt(sum)
+    lim = euc_dist < np.percentile(euc_dist, per)
+
+    sat_minor = minor_vir[lim]
+    env_minor = minor_8[lim]
+    ca_rvir = ca_rvir[lim]
+
+    indices = np.where(lim == True)[0]
+    indices5 = [0, 1, 2, 3, 4, 5]
+    """
+    list_2d = []
+    i = 0
+    for index in indices:
+        list = []
+        for prop in all_props:
+            list.append(prop[index])
+        list_2d.append(list)
+        print('most similar ' + str(i), all_labels, list_2d[i])
+        print('')
+        i += 1
+    """
+    differences = []
+    for i in range(len(sat_minor)):
+        cos_theta = (np.dot(sat_minor[i], np.reshape(env_minor[i], (3,1)))) / \
+                    (np.linalg.norm(sat_minor[i]) * np.linalg.norm(env_minor[i]))
+        differences.append(np.absolute(cos_theta[0][0]))
+    fig, ax = plt.subplots(1, 1, figsize=(7,7))
+    plt.suptitle('Difference Between Angles from Minor Axis at Virial and 8Mpc Radii')
+    ax.scatter(ca_rvir, differences, marker='.', label= str(per)+'% most similar to MW')
+    ax.set_xlabel(r'$c/a_{rvir}$')
+    ax.set_xlim(0,1)
+    ax.set_ylim(0,1)
+    ax.set_ylabel(r'$|cos(\theta)|$')
+    plt.legend()
+    plt.show()
+
+
+
+
 
 
 
