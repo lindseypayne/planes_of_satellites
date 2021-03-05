@@ -9,6 +9,7 @@ import matplotlib.lines as mlines
 from scipy import stats
 import numpy.linalg as linalg
 import KS2D
+import numpy.random as random
 
 L = 62.5    # Mpc/h
 mass = 1
@@ -22,21 +23,23 @@ def main():
     host_masses, target_ids = find_hosts(mvir, upid, M_B)
 
     c_a_env, b_a_env, c_a_rvir, b_a_rvir, c_a_med, b_a_med, ddim_list, \
-    dbright_list, mpeak_list, corotations, minor_ax_vir, minor_ax_8 = \
+    dbright_list, mpeak_list, corotations, minor_ax_vir, minor_ax_8, disp, L = \
         find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz)
 
     ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, ca_med, ba_med,\
     corotations, all_props, all_labels, minor_vir, minor_8 = convert(c_a_env, b_a_env, c_a_rvir,
     b_a_rvir, c_a_med, b_a_med, ddim_list, dbright_list, corotations, minor_ax_vir, minor_ax_8)
 
-    various_plots(ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations, mpeak_list)
-    props, MW_data, labels = user_choice(ca_med, ba_med, ddim, dbright, dratio)
-    sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba_rvir, corotations)
-    alignment(all_labels, all_props, [c_a_med, b_a_med], [0.163, 0.786], ca_rvir, minor_vir, minor_8, 5)
+    #various_plots(ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations, mpeak_list)
+    #props, MW_data, labels = user_choice(ca_med, ba_med, ddim, dbright, dratio)
+    #sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba_rvir, corotations)
+    #alignment(all_labels, all_props, [c_a_med, b_a_med], [0.163, 0.786], ca_rvir, minor_vir, minor_8, 5)
 
     #stat_test(corotations, ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir)
-    KS_2D(ca_rvir, corotations, [ca_8, ba_8, ddim, dratio],
-          [r'$(c/a)_{8Mpc}$', r'$(b/a)_{8Mpc}$', r'$\Delta_{dim}$', r'$\Delta_{ratio}$'], 5)
+    #KS_2D(ca_rvir, corotations, [ca_8, ba_8, ddim, dratio],
+          #[r'$(c/a)_{8Mpc}$', r'$(b/a)_{8Mpc}$', r'$\Delta_{dim}$', r'$\Delta_{ratio}$'], 5)
+    sat_sep(disp, L)
+    #test_sep()
 
 
 
@@ -214,6 +217,7 @@ def sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax):
     omega_yarr = (sub_dy * vy) / (np.absolute(sub_dy))**1/2
     omega_zarr = (sub_dz * vz) / (np.absolute(sub_dz))**1/2
     L_direction = []
+    L_vec= []
     # loops over all of host's subhaloes
     for i in range(len(omega_xarr)):
         omega_x = omega_xarr[i]
@@ -221,6 +225,7 @@ def sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax):
         omega_z = omega_zarr[i]
         omega_col = np.reshape(np.array([omega_x, omega_y, omega_z]), (3,1))
         L = np.dot(inertia_tensor, omega_col)  # actual angular momentum
+        L_vec.append(L[0])
         L_unit = L / np.sqrt((L[0]**2) + (L[1]**2) + (L[2]**2))    # direction of angular momentum
         L_dir = np.dot(minor_ax, L_unit)   # dot product of AM vector with minor axis gets direction.
         L_direction.append(L_dir)
@@ -233,7 +238,7 @@ def sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax):
     neg_ratio = 1 - pos_ratio
     # ??????????
     corotation = np.abs(pos_ratio - neg_ratio)
-    return corotation
+    return corotation, L_vec
 
 
 def new_tensor(sub_dx, sub_dy, sub_dz, vx, vy, vz):
@@ -254,8 +259,8 @@ def new_tensor(sub_dx, sub_dy, sub_dz, vx, vy, vz):
     evalues, evectors = np.linalg.eig(inertia_tensor)
     smallest_evalue = np.where(evalues == evalues.min())[0]
     minor_ax = np.reshape(evectors[smallest_evalue], (1,3))
-    corotation = sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax)
-    return corotation, minor_ax
+    corotation, L = sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax)
+    return corotation, minor_ax, L
 
 
 def dim_bright_avgs(M_B):
@@ -283,7 +288,7 @@ def unit_tests(i):
     vx_test = np.random.rand(100)
     vy_test = np.random.rand(100)
     vz_test = np.random.rand(100)
-    rotations_test, minor_ax = new_tensor(test_dx, test_dy, test_dz, vx_test, vy_test, vz_test)
+    rotations_test, minor_ax, L = new_tensor(test_dx, test_dy, test_dz, vx_test, vy_test, vz_test)
 
 
 def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
@@ -317,7 +322,9 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
     corotations = []
     minor_ax_vir = []
     minor_ax_8 = []
+    L_vec = []
     i = 0
+    disps = []
     for id in target_ids[0]:
         host_point = points[id]
         host_Rvir = rvir[id]
@@ -347,7 +354,12 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
         sub_vx = vx[sub_idx] - vx[id]
         sub_vy = vy[sub_idx] - vy[id]
         sub_vz = vz[sub_idx] - vz[id]
-
+        d_vec = []
+        for k in range(len(sub_dx)):
+            dx = sub_dx[k]
+            dy = sub_dy[k]
+            dz = sub_dz[k]
+            d_vec.append([dx,dy,dz])
         #unit_tests(i)
         c_a_rvir, b_a_rvir, _, _ = get_axes(sub_dx, sub_dy, sub_dz, i)
         mpeak_host = mpeak[id]
@@ -365,14 +377,16 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
             ddim_list.append(ddim)
             dbright_list.append(dbright)
             mpeak_host_list.append(mpeak_host)
-            corotation, minor_vir = new_tensor(sub_dx, sub_dy, sub_dz, sub_vx, sub_vy, sub_vz)
-            _, minor_8 = new_tensor(obj_dx, obj_dy, obj_dz, obj_vx, obj_vy, obj_vz)
+            corotation, minor_vir, L = new_tensor(sub_dx, sub_dy, sub_dz, sub_vx, sub_vy, sub_vz)
+            _, minor_8, _ = new_tensor(obj_dx, obj_dy, obj_dz, obj_vx, obj_vy, obj_vz)
             minor_ax_vir.append(minor_vir)
             minor_ax_8.append(minor_8)
             corotations.append(corotation)  # 0 means no corotation, half in one direction half in another
+            L_vec.append(L)
+            disps.append(d_vec)
         i += 1
     return ca_env, ba_env, ca_rvir, ba_rvir, ca_median, ba_median, ddim_list, \
-           dbright_list, mpeak_host_list, corotations, minor_ax_vir, minor_ax_8
+           dbright_list, mpeak_host_list, corotations, minor_ax_vir, minor_ax_8, disps, L_vec
 
 """
 VERY SMALL AXIS RATIO ON PLOT
@@ -578,10 +592,13 @@ def sorted_ks(x, y):
     return np.max(diff)
 
 # time python3 2D.scatter
-# import time
+import time
 # t0 = time.time()
 # t1 = time.time()
 # print(t1 - t0) print("%.3f s passed" % (t1 - t0))
+
+# will underestimate p-value if it doesn't account for correlation of theta_opens;
+# opening angles are NOT independent of one another (axis ratios are)
 def empirical_KS(full_sample, subsample, N_loops):
     """ The null-hypothesis for the KT test is that the distributions are the same.
         Thus, the lower your p value the greater the statistical evidence you have to
@@ -636,13 +653,13 @@ def histenv(vara, varb, ax, per1, per2, labela, labelb, setax, upperx,
     sm_pvalue_AD = empirical_AD(varb, varb[sm_ratio_lim], N_loops)
     # each of these curves are CDFs
     ax.hist(varb[lg_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
-            range=(0,upperx), color=colors[0], label='top KS pvalue ' + str(round(lg_pvalue_KS,2)))
+            range=(0,upperx), color=colors[0], label='KS pvalue ' + str(round(lg_pvalue_KS,2)))
     ax.hist(varb[lg_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
-            range=(0, upperx),color=colors[0], label='top AD pvalue ' + str(round(lg_pvalue_AD,2)))
-    ax.hist(varb[sm_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
+            range=(0, upperx),color=colors[0], label='AD pvalue ' + str(round(lg_pvalue_AD,2)))
+    """ax.hist(varb[sm_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
             range=(0,upperx), color=colors[1], label='bot KS pvalue ' + str(round(sm_pvalue_KS,2)))
     ax.hist(varb[sm_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
-            range=(0, upperx),color=colors[1], label='bot AD pvalue ' + str(round(sm_pvalue_AD,2)))
+            range=(0, upperx),color=colors[1], label='bot AD pvalue ' + str(round(sm_pvalue_AD,2)))"""
     ax.hist(varb, bins=bins, cumulative=True, density=True, histtype='step', color=colors[2])
     ax.axis('square')
     if setax is True:
@@ -1017,7 +1034,7 @@ def sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba
                        label2=r'$(c/a)_{rvir}$', sim_components=labels)
     statistics_MW_rank(corotations, ba_rvir, euc_dist, label1=r'$f_{corotation}$',
                        label2=r'$(b/a)_{rvir}$', sim_components=labels)
-    """
+
     most_indices = np.argpartition(euc_dist,range(5))[:5]
     list_2d = []
     i = 0
@@ -1029,7 +1046,7 @@ def sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba
         print('most similar ' + str(i), all_labels, list_2d[i])
         print('')
         i += 1
-    """
+    
     # paper test!! worked
 
 
@@ -1068,7 +1085,7 @@ def KS_2D(sat1, sat2, env_list, labels, per):
             j = 1
             k = 1
         ax[j][k].scatter(sat1, sat2, marker='.', edgecolors=colors[-2], color=colors[-1], label='full satellite sample')
-        ax[j][k].scatter(sat1[env_cut1], sat2[env_cut1],  marker='.', color=colors[i], label='KS pvalue ' + str(round(p,2)))
+        ax[j][k].scatter(sat1[env_cut1], sat2[env_cut1],  marker='.', color=colors[0], label='KS pvalue ' + str(round(p,2)))
         ax[j][k].set_xlim(0, upperx)
         ax[j][k].set_ylim(0, uppery)
         ax[j][k].set_title('Split on lowest ' + str(per) + '% ' + labels[i])
@@ -1129,9 +1146,113 @@ def alignment(all_labels, all_props, props, MW_data, ca_rvir, minor_vir, minor_8
     plt.show()
 
 
+def sat_sep(dsat, L):
+    bins=10
+    all_theta = []
+    corot = []
+    antirot = []
+    print(len(dsat), len(L))
+    # h = host
+    for h in range(len(dsat)):
+        # i = sats
+        for i in range(0,len(dsat[h])):
+                # j = other sats
+            for j in range(i+1,len(dsat[h])):
+                theta = np.arccos((np.dot(dsat[h][i], np.reshape(dsat[h][j], (3, 1)))) / \
+                            (np.linalg.norm(dsat[h][i]) * np.linalg.norm(dsat[h][j])))
+                all_theta.append(np.absolute(theta[0]))
+                dot = np.dot(L[h][i], L[h][j])
+                if dot > 0:
+                    corot.append(theta[0])
+                else:
+                    antirot.append(theta[0])
+    anglez = [all_theta, corot, antirot]
+    centerz = []
+    pdenz = []
+    for a in anglez:
+        N, theta_edges = np.histogram(a, range=(0, np.pi), bins=bins)
+        bin_size = np.pi / bins
+        p_density = N / np.sum(N) / bin_size
+        theta_centers = (theta_edges[1:] + theta_edges[:-1]) / 2
+        sin_theta = np.sin(theta_centers) / 2
+        scaled_pdensity = p_density / sin_theta
+        centerz.append(theta_centers)
+        pdenz.append(p_density)
+    N_loops = 100
+    _1, p1 = empirical_KS(all_theta, corot, N_loops)
+    _, p2 = empirical_KS(all_theta, antirot, N_loops)
+    fig, ax = plt.subplots(figsize=(10, 10), dpi=75, tight_layout=False)
+    ax.plot(centerz[0], pdenz[0], label=r'all $\theta_{open}$')
+    ax.plot(centerz[1], pdenz[1], label='corot: p = '+str(round(p1,2)))
+    ax.plot(centerz[2], pdenz[2], label='antirot: p = '+str(round(p2,2)))
+    ax.plot()
+    #ax.axhline(y=1, color='black', lw=0.8, linestyle='--', label='expected spherical dist')
+    fig.suptitle('Angular Separation Between All Satellite Pairs in Erebos_CBol_L63')
+    ax.set_xlabel(r'Opening angle $\theta_{open}$ [rad]')
+    ax.set_ylabel(r'$N_{\theta_{open}}\ /\ N_{tot}\ /\ d(\theta_{open})$')
+    ax.legend()
+    plt.show()
+    print('done')
 
 
+def random_sphere(N):
+    """ random_sphere returns the azimuthal angle, phi, and polar angle, theta
+    of N points generated uniformly at random over the surface of a sphere.
+    """
+    # See https://mathworld.wolfram.com/SpherePointPicking.html for the
+    # algorithm. (Basically just the Inverse Transfer Method.)
+    phi = 2 * np.pi * random.random(N)
+    theta = np.arccos(2 * random.random(N) - 1)
+    return phi, theta
 
+def spherical_to_cartesian(phi, theta, r):
+    """ spherical_to_cartesian converts spherical coordiantes to cartesian
+    coordinates. Here, phi is the azimuthal angle, theta is the polar angle, and
+    r is the radius.
+    """
+    # See https://mathworld.wolfram.com/SphericalCoordinates.html, but note the
+    # difference in convention.
+    x = r * np.cos(phi) * np.sin(theta)
+    y = r * np.sin(phi) * np.sin(theta)
+    z = r * np.cos(theta)
+    return x, y, z
+
+def random_ball(N, R):
+    """ random_ball returns a N points (x, y, z) generated uniformly at
+    random from within a ball of radius r.
+    """
+    phi, theta = random_sphere(N)
+    # Inverse Transform Method, See
+    # http://www.columbia.edu/~ks20/4404-Sigman/4404-Notes-ITM.pdf
+    r = random.random(N) ** (1.0 / 3) * R
+    return spherical_to_cartesian(phi, theta, r)
+
+
+def random_ellipsoid(N, a, b, c):
+    """ random_ellipsoid returns N points generated uniformly at random inside
+    an ellipsoid. The axes of the ellipsoid are given by (a, b, c) which
+    are aligned with the x, y, and z axes, respectively.
+    """
+    x, y, z = random_ball(N, 1.0)
+    return x * a, y * b, z * c
+
+
+N = 500
+def test_sep():
+
+    #x, y, z = random_ellipsoid(N, 25.904750799398368, 21.681969785452043, 19.293134199600996)
+    x, y, z = random_ellipsoid(N, 1, 1, 0.5)
+    #x, y, z = random_ball(N, 1.0)
+    #print('point displacements', x,y,z)
+    d = []
+    for k in range(len(x)):
+        x1 = x[k]
+        y1 = y[k]
+        z1 = z[k]
+        d.append([x1,y1,z1])
+    d = [d]
+    #d = [[[0,0,1],[2,0,0],[0,0,-2]]]
+    sat_sep(d)
 
 
 if __name__ == '__main__':
