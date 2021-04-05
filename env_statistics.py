@@ -23,23 +23,33 @@ def main():
     host_masses, target_ids = find_hosts(mvir, upid, M_B)
 
     c_a_env, b_a_env, c_a_rvir, b_a_rvir, c_a_med, b_a_med, ddim_list, \
-    dbright_list, mpeak_list, corotations, minor_ax_vir, minor_ax_8, disp, L = \
-        find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz)
+    dbright_list, mpeak_list, corotations, minor_ax_vir, minor_ax_8, L, \
+    sat_x, sat_y, sat_z, IDs = find_neighbors(f, rvir, mvir, x, y, z, target_ids,
+                                         M_B, mpeak, vx, vy, vz)
 
     ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, ca_med, ba_med,\
-    corotations, all_props, all_labels, minor_vir, minor_8 = convert(c_a_env, b_a_env, c_a_rvir,
+    corotations, all_props, all_labels, minor_vir, minor_8, env_props, env_labels = convert(c_a_env, b_a_env, c_a_rvir,
     b_a_rvir, c_a_med, b_a_med, ddim_list, dbright_list, corotations, minor_ax_vir, minor_ax_8)
 
     #various_plots(ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations, mpeak_list)
-    #props, MW_data, labels = user_choice(ca_med, ba_med, ddim, dbright, dratio)
-    #sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba_rvir, corotations)
+    """
+    euc_dist = []
+    sim_labels = []
+    for i in range(4):
+        props, MW_data, labels = user_choice(ca_med, ba_med, ddim, dbright, dratio)
+        euc = sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba_rvir, corotations)
+        euc_dist.append(np.asarray(euc))
+        sim_labels.append(labels)
+        """
     #alignment(all_labels, all_props, [c_a_med, b_a_med], [0.163, 0.786], ca_rvir, minor_vir, minor_8, 5)
-
     #stat_test(corotations, ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir)
     #KS_2D(ca_rvir, corotations, [ca_8, ba_8, ddim, dratio],
           #[r'$(c/a)_{8Mpc}$', r'$(b/a)_{8Mpc}$', r'$\Delta_{dim}$', r'$\Delta_{ratio}$'], 5)
-    sat_sep(disp, L)
+    #euc_dist = np.array([1,2])
+    #labels = ''
+    #sat_sep([sat_x, sat_y, sat_z], L, IDs, np.asarray(euc_dist), sim_labels, env_props, env_labels)
     #test_sep()
+    test_N_sats()
 
 
 
@@ -66,10 +76,12 @@ def convert(c_a_env, b_a_env, c_a_rvir, b_a_rvir, c_a_med, b_a_med, ddim_list, d
     corotations = np.copy(corotations)
     all_props = [ca_med, ba_med, ca_rvir, ba_rvir, ddim, dbright, dratio]
     all_labels = ['ca_med', 'ba_med', 'ca_rvir', 'ba_rvir', 'ddim', 'dbright', 'dratio']
+    env_props = [ca_8, ba_8, ddim, dratio]
+    env_labels = [r'$c/a_{8}$', r'$b/a_{8}$', r'$\Delta_{dim}$', r'$\Delta_{ratio}$']
     minor_vir = np.asarray(minor_ax_vir)
     minor_8 = np.asarray(minor_ax_8)
     return ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, ca_med, ba_med, corotations, \
-           all_props, all_labels, minor_vir, minor_8
+           all_props, all_labels, minor_vir, minor_8, env_props, env_labels
 
 
 def get_file_data():
@@ -225,11 +237,12 @@ def sub_L(sub_dx, sub_dy, sub_dz, vx, vy, vz, inertia_tensor, minor_ax):
         omega_z = omega_zarr[i]
         omega_col = np.reshape(np.array([omega_x, omega_y, omega_z]), (3,1))
         L = np.dot(inertia_tensor, omega_col)  # actual angular momentum
-        L_vec.append(L[0])
+        L_vec.append(np.array([L[0][0], L[1][0], L[2][0]]))
         L_unit = L / np.sqrt((L[0]**2) + (L[1]**2) + (L[2]**2))    # direction of angular momentum
-        L_dir = np.dot(minor_ax, L_unit)   # dot product of AM vector with minor axis gets direction.
+        L_dir = np.dot(minor_ax, L_unit)[0]   # dot product of AM vector with minor axis gets direction.
         L_direction.append(L_dir)
     L_direction = np.asarray(L_direction)
+    L_vec = np.asarray(L_vec)
     count = 0
     for el in L_direction:
         if el >= 0:
@@ -323,8 +336,12 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
     minor_ax_vir = []
     minor_ax_8 = []
     L_vec = []
+    sat_x = []
+    sat_y = []
+    sat_z = []
+    ID = []
     i = 0
-    disps = []
+
     for id in target_ids[0]:
         host_point = points[id]
         host_Rvir = rvir[id]
@@ -351,20 +368,23 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
         sub_dx = sub_x - host_point[0]
         sub_dy = sub_y - host_point[1]
         sub_dz = sub_z - host_point[2]
-        sub_vx = vx[sub_idx] - vx[id]
-        sub_vy = vy[sub_idx] - vy[id]
-        sub_vz = vz[sub_idx] - vz[id]
-        d_vec = []
-        for k in range(len(sub_dx)):
-            dx = sub_dx[k]
-            dy = sub_dy[k]
-            dz = sub_dz[k]
-            d_vec.append([dx,dy,dz])
         #unit_tests(i)
         c_a_rvir, b_a_rvir, _, _ = get_axes(sub_dx, sub_dy, sub_dz, i)
         mpeak_host = mpeak[id]
         # guarantees the data arrays are the same shape
         if len(sub_idx) >= 4:
+            ID.append(id)
+            sat_x.append(sub_x - host_point[0])
+            sat_y.append(sub_y - host_point[1])
+            sat_z.append(sub_z - host_point[2])
+            sub_vx = vx[sub_idx] - vx[id]
+            sub_vy = vy[sub_idx] - vy[id]
+            sub_vz = vz[sub_idx] - vz[id]
+            """
+            for k in range(len(sub_dx)):
+                sat_x.append(sub_dx[k])
+                sat_y.append(sub_dy[k])
+                sat_z.append(sub_dz[k])"""
             ca_rvir.append(c_a_rvir)
             ba_rvir.append(b_a_rvir)
             ca_env.append(c_a_ratio)
@@ -383,10 +403,11 @@ def find_neighbors(f, rvir, mvir, x, y, z, target_ids, M_B, mpeak, vx, vy, vz):
             minor_ax_8.append(minor_8)
             corotations.append(corotation)  # 0 means no corotation, half in one direction half in another
             L_vec.append(L)
-            disps.append(d_vec)
+
         i += 1
     return ca_env, ba_env, ca_rvir, ba_rvir, ca_median, ba_median, ddim_list, \
-           dbright_list, mpeak_host_list, corotations, minor_ax_vir, minor_ax_8, disps, L_vec
+           dbright_list, mpeak_host_list, corotations, minor_ax_vir, minor_ax_8, \
+           np.asarray(L_vec), np.asarray(sat_x), np.asarray(sat_y), np.asarray(sat_z), ID
 
 """
 VERY SMALL AXIS RATIO ON PLOT
@@ -597,8 +618,6 @@ import time
 # t1 = time.time()
 # print(t1 - t0) print("%.3f s passed" % (t1 - t0))
 
-# will underestimate p-value if it doesn't account for correlation of theta_opens;
-# opening angles are NOT independent of one another (axis ratios are)
 def empirical_KS(full_sample, subsample, N_loops):
     """ The null-hypothesis for the KT test is that the distributions are the same.
         Thus, the lower your p value the greater the statistical evidence you have to
@@ -652,14 +671,14 @@ def histenv(vara, varb, ax, per1, per2, labela, labelb, setax, upperx,
     lg_pvalue_AD = empirical_AD(varb, varb[lg_ratio_lim], N_loops)
     sm_pvalue_AD = empirical_AD(varb, varb[sm_ratio_lim], N_loops)
     # each of these curves are CDFs
-    ax.hist(varb[lg_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
+    """ax.hist(varb[lg_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
             range=(0,upperx), color=colors[0], label='KS pvalue ' + str(round(lg_pvalue_KS,2)))
     ax.hist(varb[lg_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
-            range=(0, upperx),color=colors[0], label='AD pvalue ' + str(round(lg_pvalue_AD,2)))
-    """ax.hist(varb[sm_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
-            range=(0,upperx), color=colors[1], label='bot KS pvalue ' + str(round(sm_pvalue_KS,2)))
+            range=(0, upperx),color=colors[0], label='AD pvalue ' + str(round(lg_pvalue_AD,2)))"""
     ax.hist(varb[sm_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
-            range=(0, upperx),color=colors[1], label='bot AD pvalue ' + str(round(sm_pvalue_AD,2)))"""
+            range=(0,upperx), color=colors[1], label='KS pvalue ' + str(round(sm_pvalue_KS,2)))
+    ax.hist(varb[sm_ratio_lim], bins=bins, cumulative=True, density=True, histtype='step',
+            range=(0, upperx),color=colors[1], label='AD pvalue ' + str(round(sm_pvalue_AD,2)))
     ax.hist(varb, bins=bins, cumulative=True, density=True, histtype='step', color=colors[2])
     ax.axis('square')
     if setax is True:
@@ -1043,10 +1062,12 @@ def sat_MW_comparison(props, all_props, MW_data, labels, all_labels, ca_rvir, ba
         for prop in all_props:
             list.append(prop[index])
         list_2d.append(list)
+        """
         print('most similar ' + str(i), all_labels, list_2d[i])
         print('')
+        """
         i += 1
-    
+    return euc_dist
     # paper test!! worked
 
 
@@ -1145,28 +1166,72 @@ def alignment(all_labels, all_props, props, MW_data, ca_rvir, minor_vir, minor_8
     plt.legend()
     plt.show()
 
+def opening_angle(xi, yi, zi, xj, yj, zj):
+    dot = (xi*xj) + (yi*yj) + (zi*zj)
+    pos = np.where(dot > 0)[0]
+    neg = np.where(dot < 0)[0]
+    normi = ((xi**2) + (yi**2) + (zi**2))**0.5
+    normj = ((xj**2) + (yj**2) + (zj**2))**0.5
+    thetas = np.arccos(dot / (normi*normj))
+    return thetas
 
-def sat_sep(dsat, L):
-    bins=10
-    all_theta = []
+# will underestimate p-value if it doesn't account for correlation of theta_opens;
+# opening angles are NOT independent of one another (axis ratios are)
+def lilliefors(host_ids, full_sample, subsample, N_loops):
+    """ The null-hypothesis for the KT test is that the distributions are the same.
+        Thus, the lower your p value the greater the statistical evidence you have to
+        reject the null hypothesis and conclude the distributions are different.
+    """
+    count = 0
+    all_sats = np.hstack(full_sample)
+    full_sample = np.array(full_sample, dtype=object)
+    og_stat, og_pvalue = stats.kstest(all_sats, np.hstack(subsample))
+    for i in range(N_loops):
+        num_points = len(subsample)
+        ran_ids = np.random.choice(host_ids, num_points, replace=True)
+        ran_hosts = full_sample[ran_ids]
+        ran_sats = np.hstack(ran_hosts)
+        emp_stat, emp_pvalue = stats.kstest(all_sats, ran_sats)
+        if emp_stat > og_stat:
+            count += 1
+    updated_pvalue = count / N_loops
+    return updated_pvalue, og_pvalue
+
+def single_KS(full, sub):
+    stat, p = stats.kstest(full, sub)
+    return p
+
+def sat_sep_plots(env, ax, per, labela, labelb, subtitle, xtitle, ytitle, sat_positions, hosts, L, Num, bins, dict, similarity_labels):
+    sample = env < np.percentile(env, per)
+    bins=bins
+    all_thetas = []
     corot = []
     antirot = []
-    print(len(dsat), len(L))
-    # h = host
-    for h in range(len(dsat)):
-        # i = sats
-        for i in range(0,len(dsat[h])):
-                # j = other sats
-            for j in range(i+1,len(dsat[h])):
-                theta = np.arccos((np.dot(dsat[h][i], np.reshape(dsat[h][j], (3, 1)))) / \
-                            (np.linalg.norm(dsat[h][i]) * np.linalg.norm(dsat[h][j])))
-                all_theta.append(np.absolute(theta[0]))
-                dot = np.dot(L[h][i], L[h][j])
-                if dot > 0:
-                    corot.append(theta[0])
-                else:
-                    antirot.append(theta[0])
-    anglez = [all_theta, corot, antirot]
+    samples = []
+    corot_samples = []
+    antirot_samples = []
+    host_ids = []
+    for h in range(len(hosts)):
+        idx = np.arange(len(sat_positions[0][h]))
+        i, j = idx, idx
+        i_grid, j_grid = np.meshgrid(i, j)
+        i_flat, j_flat = i_grid.flatten(), j_grid.flatten()
+        valid_pair = j_flat > i_flat
+        i_flat, j_flat = i_flat[valid_pair], j_flat[valid_pair]
+        thetas = opening_angle(sat_positions[0][h][i_flat], sat_positions[1][h][i_flat], sat_positions[2][h][i_flat],
+                               sat_positions[0][h][j_flat], sat_positions[1][h][j_flat], sat_positions[2][h][j_flat])
+        all_thetas.append(thetas)
+        Li, Lj = L[h][i_flat, :], L[h][j_flat, :]
+        dots = np.sum(Li * Lj, axis=1)  # a value for each satellite, but want a single value for entire halo???
+        corot.append(thetas[dots > 0])
+        antirot.append(thetas[dots < 0])
+        if sample[h] == True:
+            samples.append(thetas)
+            corot_samples.append(thetas[dots > 0])
+            antirot_samples.append(thetas[dots < 0])
+        host_ids.append(h)
+    anglez = [np.hstack(all_thetas), np.hstack(corot), np.hstack(antirot), np.hstack(samples),
+              np.hstack(corot_samples), np.hstack(antirot_samples)]
     centerz = []
     pdenz = []
     for a in anglez:
@@ -1177,21 +1242,182 @@ def sat_sep(dsat, L):
         sin_theta = np.sin(theta_centers) / 2
         scaled_pdensity = p_density / sin_theta
         centerz.append(theta_centers)
-        pdenz.append(p_density)
-    N_loops = 100
-    _1, p1 = empirical_KS(all_theta, corot, N_loops)
-    _, p2 = empirical_KS(all_theta, antirot, N_loops)
-    fig, ax = plt.subplots(figsize=(10, 10), dpi=75, tight_layout=False)
-    ax.plot(centerz[0], pdenz[0], label=r'all $\theta_{open}$')
-    ax.plot(centerz[1], pdenz[1], label='corot: p = '+str(round(p1,2)))
-    ax.plot(centerz[2], pdenz[2], label='antirot: p = '+str(round(p2,2)))
-    ax.plot()
-    #ax.axhline(y=1, color='black', lw=0.8, linestyle='--', label='expected spherical dist')
-    fig.suptitle('Angular Separation Between All Satellite Pairs in Erebos_CBol_L63')
-    ax.set_xlabel(r'Opening angle $\theta_{open}$ [rad]')
-    ax.set_ylabel(r'$N_{\theta_{open}}\ /\ N_{tot}\ /\ d(\theta_{open})$')
-    ax.legend()
+        pdenz.append(scaled_pdensity)
+    ps, _ = lilliefors(host_ids, all_thetas, samples, Num)
+    pc, _ = lilliefors(host_ids, corot, corot_samples, Num)
+    pa, _ = lilliefors(host_ids, antirot, antirot_samples, Num)
+    ax.plot(centerz[0], pdenz[0], label=r'all $\theta_{open}$', color='blue')
+    ax.plot(centerz[1], pdenz[1], label='corotating', color='red')
+    ax.plot(centerz[2], pdenz[2], label='antirotating', color='purple')
+    ax.plot(centerz[3], pdenz[3], label=str(per) + r' % MW similarity: $p$ = ' + str(round(ps, 2)), color='blue', ls='--')
+    #ax.plot(centerz[3], pdenz[3], label='top ' + str(per) + r'% in ' + labela + ': $p$ = ' + str(round(ps, 2)))
+    ax.plot(centerz[4], pdenz[4], label=r'corotating in ' + str(per) + '%: $p$ = ' + str(round(pc, 2)), color='red', ls=':')
+    ax.plot(centerz[5], pdenz[5], label=r'antirotating in ' + str(per) + '%: $p$ = ' + str(round(pa, 2)), color='purple', ls='-.')
+    ax.axhline(y=1, color='black', lw=0.8, linestyle='--', label='expected spherical dist')
+    ax.axhline(y=0, color='white', lw=0.8, linestyle='--', label='similarity computed on: ' + str(similarity_labels))
+
+    # each of these curves are CDFs
+    ax.set_ylim(0.8, 1.6)
+    ax.set_aspect(4)
+    if subtitle is True:
+        ax.set_title('split on ' + labela, fontsize=10)
+    if xtitle is True:
+        ax.set_xlabel(labelb, fontsize=10)
+    if ytitle is True:
+        ax.set_ylabel(r'$N_{\theta_{open}}\ /\ N_{tot}\ /\ d(\theta_{open})/\ sin(\theta)$', fontsize=10)
+    ax.tick_params(axis="x", labelsize=8)
+    ax.tick_params(axis="y", labelsize=8)
+    ax.legend(loc="best", fontsize=5)
+    string = str(per) + '% ' + labela
+    dict[string] = {r'$p$-values': {'all-sample': ps, 'corot-sample': pc, 'antirot-sample': pa}}
+    return dict
+
+
+def sat_sep(sat_positions, L, hosts, euc_dist, similarity_labels, env_props, env_labels):
+    """
+    fig, ax = plt.subplots(3,4,figsize=(10, 10), dpi=75, tight_layout=False)
+    i = 0
+    bins=10
+    per_list = [5, 10, 25]
+    ytitle = False
+    xtitle = False
+    labelb = r'Opening angle $\theta_{open}$ [rad]'
+    title = True
+    dict = {}
+    N1 = 10000
+    for per in per_list:
+        if i == 0:
+            title = True
+        if i == 1 or i == 2:
+            title = False
+        if i == 2:
+            xtitle = True
+        sat_sep_plots(env_props[0], ax[i][0], per, env_labels[0],
+                labelb, title, xtitle, True, sat_positions, hosts, L, N1, bins, dict)
+        sat_sep_plots(env_props[1], ax[i][1], per, env_labels[1],
+                labelb, title, xtitle, ytitle, sat_positions, hosts, L, N1, bins, dict)
+        sat_sep_plots(env_props[2], ax[i][2], per, env_labels[2],
+                labelb, title, xtitle, ytitle, sat_positions, hosts, L, N1, bins, dict)
+        sat_sep_plots(env_props[3], ax[i][3], per, env_labels[3],
+                labelb, title, xtitle, ytitle, sat_positions, hosts, L, N1, bins, dict)
+        i += 1
+    print(dict)
+    fig.suptitle('CDFs of Angular Separation Between Satellite Pairs in Erebos_CBol_L63 Split on Single Environmental Parameters')
     plt.show()
+    """
+
+    fig, ax = plt.subplots(3,4,figsize=(10, 10), dpi=75, tight_layout=False)
+    i = 0
+    bins=10
+    per_list = [5, 10, 25]
+    ytitle = False
+    xtitle = False
+    labelb = r'Opening angle $\theta_{open}$ [rad]'
+    title = False
+    dict = {}
+    N1 = 10000
+    for per in per_list:
+        if i == 1 or i == 2:
+            title = False
+        if i == 2:
+            xtitle = True
+        sat_sep_plots(euc_dist[0], ax[i][0], per, env_labels[0],
+                labelb, title, xtitle, True, sat_positions, hosts, L, N1, bins, dict, similarity_labels[0])
+        sat_sep_plots(euc_dist[1], ax[i][1], per, env_labels[1],
+                labelb, title, xtitle, ytitle, sat_positions, hosts, L, N1, bins, dict, similarity_labels[1])
+        sat_sep_plots(euc_dist[2], ax[i][2], per, env_labels[2],
+                labelb, title, xtitle, ytitle, sat_positions, hosts, L, N1, bins, dict, similarity_labels[2])
+        sat_sep_plots(euc_dist[3], ax[i][3], per, env_labels[3],
+                labelb, title, xtitle, ytitle, sat_positions, hosts, L, N1, bins, dict, similarity_labels[3])
+        i += 1
+    print(dict)
+    """
+    line1 = mlines.Line2D([], [], color='indianred', label='top 5%')
+    line3 = mlines.Line2D([], [], color='forestgreen', label='top 10%')
+    line5 = mlines.Line2D([], [], color='crimson', label='top 25%')
+    line7 = mlines.Line2D([], [], color='black', label='all hosts')
+    fig.legend(handles=[line1, line3, line5, line7], fontsize=6)"""
+    fig.suptitle('CDFs of Angular Separation Between Satellite Pairs in Erebos_CBol_L63 selected on Percentiles of Similarity to MW')
+    plt.show()
+
+    """bins = 10
+    per = 10
+    labelb = r'Opening angle $\theta_{open}$ [rad]'
+    title = True
+    fig, ax = plt.subplots(figsize=(10, 10), dpi=75, tight_layout=False)
+    sat_sep_plots(env_props[2], ax, per, env_labels[2],
+                  labelb, title, True, True, sat_positions, hosts, L, 10000, bins)
+    fig.suptitle(r'CDFs of Angular Separation Between Satellite Pairs in Erebos_CBol_L63 Split on Single Environmental Parameter: $\Delta_{dim}$')
+    plt.show()
+    all_thetas2 = []
+    corot2 = []
+    antirot2 = []
+    samples2 = []
+    corot_samples2 = []
+    antirot_samples2 = []
+    host_ids2 = []
+    # use euc_dist for MW comparison, and env_props for single parameter
+    sample = env_props[2] < np.percentile(env_props[2], per)   ### ddim
+    for h in range(len(hosts)):
+        idx = np.arange(len(sat_positions[0][h]))
+        i, j = idx, idx
+        i_grid, j_grid = np.meshgrid(i, j)
+        i_flat, j_flat = i_grid.flatten(), j_grid.flatten()
+        valid_pair = j_flat > i_flat
+        i_flat, j_flat = i_flat[valid_pair], j_flat[valid_pair]
+        thetas = opening_angle(sat_positions[0][h][i_flat], sat_positions[1][h][i_flat], sat_positions[2][h][i_flat],
+                               sat_positions[0][h][j_flat], sat_positions[1][h][j_flat], sat_positions[2][h][j_flat])
+        all_thetas2.append(thetas)
+        Li, Lj = L[h][i_flat, :], L[h][j_flat, :]
+        dots = np.sum(Li * Lj, axis=1)  # a value for each satellite, but want a single value for entire halo???
+        corot2.append(thetas[dots > 0])
+        antirot2.append(thetas[dots < 0])
+        if sample[h] == True:
+            samples2.append(thetas)
+            corot_samples2.append(thetas[dots > 0])
+            antirot_sample2s.append(thetas[dots < 0])
+        host_ids2.append(h)
+    labelz2 = ['all', 'corot', 'antirot', 'similarity percentile', 'similarity corot', 'similarity antirot']
+    anglez2 = [np.hstack(all_thetas2), np.hstack(corot2), np.hstack(antirot2), np.hstack(samples2),
+              np.hstack(corot_samples2), np.hstack(antirot_samples2)]
+    centerz2 = []
+    pdenz2 = []
+    for a in anglez2:
+        N, theta_edges = np.histogram(a, range=(0, np.pi), bins=bins)
+        bin_size = np.pi / bins
+        p_density = N / np.sum(N) / bin_size
+        theta_centers = (theta_edges[1:] + theta_edges[:-1]) / 2
+        sin_theta = np.sin(theta_centers) / 2
+        scaled_pdensity = p_density / sin_theta
+        centerz2.append(theta_centers)
+        pdenz2.append(scaled_pdensity)
+
+    N_loops = 10000
+    ps, _ = lilliefors(host_ids2, all_thetas2, samples2, N_loops)
+    pc, _ = lilliefors(host_ids2, corot2, corot_samples2, N_loops)
+    pa, _ = lilliefors(host_ids2, antirot2, antirot_samples2, N_loops)
+
+    fig, ax = plt.subplots(figsize=(10, 10), dpi=75, tight_layout=False)
+    ax.plot(centerz2[0], pdenz2[0], label=r'all $\theta_{open}$')
+    ax.plot(centerz2[1], pdenz2[1], label='corotating')
+    ax.plot(centerz2[2], pdenz2[2], label='antirotating')
+    ax.plot(centerz2[3], pdenz2[3], label=str(per)+r' % MW similarity: $p$ = ' + str(round(ps, 2)))
+    #ax.plot(centerz2[3], pdenz2[3], label='top ' + str(per) + r'% in ' + env_labels[0]+': $p$ = ' + str(round(ps, 2)))
+    ax.plot(centerz2[4], pdenz2[4], label=r'corotating in '+str(per)+'%: $p$ = ' + str(round(pc, 2)))
+    ax.plot(centerz2[5], pdenz2[5], label=r'antirotating in '+str(per)+'%: $p$ = ' + str(round(pa, 2)))
+    ax.plot()
+    ax.axhline(y=1, color='black', lw=0.8, linestyle='--', label='expected spherical dist')
+    ax.axhline(y=0, color='white', lw=0.8, linestyle='--', label='bins: '+str(bins))
+    ax.axhline(y=0, color='white', lw=0.8, linestyle='--', label='similarity computed on: '+str(similarity_labels))
+    #fig.suptitle('CDFs of Angular Separation Between Satellite Pairs in Erebos_CBol_L63 selected on Percentiles of Similarity to MW')
+    fig.suptitle(r'CDFs of Angular Separation Between Satellite Pairs in Erebos_CBol_L63 Split on Single Environmental Parameter: $\Delta_{dim}$')
+    ax.set_xlabel(r'Opening angle $\theta_{open}$ [rad]')
+    ax.set_ylabel(r'$N_{\theta_{open}}\ /\ N_{tot}\ /\ d(\theta_{open})/\ sin(\theta)$')
+    ax.set_ylim(0.75, np.pi)
+    ax.axis('square')
+    ax.legend()
+    plt.show()"""
+
     print('done')
 
 
@@ -1236,7 +1462,7 @@ def random_ellipsoid(N, a, b, c):
     x, y, z = random_ball(N, 1.0)
     return x * a, y * b, z * c
 
-
+"""
 N = 500
 def test_sep():
 
@@ -1253,6 +1479,49 @@ def test_sep():
     d = [d]
     #d = [[[0,0,1],[2,0,0],[0,0,-2]]]
     sat_sep(d)
+"""
+
+def test_N_sats():
+    # x, y, z are arrays of position values for each random point in the
+    # ellipsoid, relative to its center
+    fig, ax = plt.subplots(figsize=(10, 10), dpi=75)
+    N_points = [5, 10, 15, 20]
+    N_realizations = 100
+    ca_exp = 1
+    ca_2d = []
+    ca_stds = []
+    N_2d = []
+    for n in N_points:
+        ax.plot(n, ca_exp, color='red', marker='x')
+        ca_point = []
+        N_point = []
+        for i in range(N_realizations):
+            x, y, z = random_ellipsoid(n, 1, 1, 1)
+            ca, ba, _, _ = get_axes(x, y, z, i)
+            ca_point.append(ca/ca_exp)
+            N_point.append(n)
+        ca_2d.append(ca_point)
+        ca_stds.append(np.std(ca_point))
+        N_2d.append(N_point)
+
+    ax.scatter(N_2d, ca_2d)
+    plt.errorbar(N_2d, ca_2d, ecolor='pink', yerr=ca_stds, xerr=None, ls='none')
+    ax.set_xlabel(r'$N_{points}$')
+    ax.set_ylabel(r'$(c/a)\ / \ (c/a_{expected})$')
+    fig.suptitle(r'Axis Ratio Recovery for Various $N_{sats}$ Done With ' + str(N_realizations) + ' Point Realizations')
+    plt.show()
+    """
+    x, y, z = random_ellipsoid(N, 1, 1, 0.5)
+    ca_exp = 0.5
+    x, y, z = random_ellipsoid(N, 1, 0.5, 0.5)
+    ca_exp = 0.5
+    x, y, z = random_ellipsoid(N, 1, 1, 0.75)
+    ca_exp = 0.75
+    x, y, z = random_ellipsoid(N, 1, 0.75, 0.75)
+    ca_exp = 0.75
+    """
+
+
 
 
 if __name__ == '__main__':
