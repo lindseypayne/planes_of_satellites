@@ -50,7 +50,7 @@ def main():
     #sat_sep([sat_x, sat_y, sat_z], L, IDs, np.asarray(euc_dist), sim_labels, env_props, env_labels)
     #test_sep()
     test_N_sats()
-
+    points_sep()
 
 
 def various_plots(ca_8, ba_8, ddim, dbright, dratio, ca_rvir, ba_rvir, corotations, mpeak_list):
@@ -1340,86 +1340,6 @@ def sat_sep(sat_positions, L, hosts, euc_dist, similarity_labels, env_props, env
     fig.suptitle('CDFs of Angular Separation Between Satellite Pairs in Erebos_CBol_L63 selected on Percentiles of Similarity to MW')
     plt.show()
 
-    """bins = 10
-    per = 10
-    labelb = r'Opening angle $\theta_{open}$ [rad]'
-    title = True
-    fig, ax = plt.subplots(figsize=(10, 10), dpi=75, tight_layout=False)
-    sat_sep_plots(env_props[2], ax, per, env_labels[2],
-                  labelb, title, True, True, sat_positions, hosts, L, 10000, bins)
-    fig.suptitle(r'CDFs of Angular Separation Between Satellite Pairs in Erebos_CBol_L63 Split on Single Environmental Parameter: $\Delta_{dim}$')
-    plt.show()
-    all_thetas2 = []
-    corot2 = []
-    antirot2 = []
-    samples2 = []
-    corot_samples2 = []
-    antirot_samples2 = []
-    host_ids2 = []
-    # use euc_dist for MW comparison, and env_props for single parameter
-    sample = env_props[2] < np.percentile(env_props[2], per)   ### ddim
-    for h in range(len(hosts)):
-        idx = np.arange(len(sat_positions[0][h]))
-        i, j = idx, idx
-        i_grid, j_grid = np.meshgrid(i, j)
-        i_flat, j_flat = i_grid.flatten(), j_grid.flatten()
-        valid_pair = j_flat > i_flat
-        i_flat, j_flat = i_flat[valid_pair], j_flat[valid_pair]
-        thetas = opening_angle(sat_positions[0][h][i_flat], sat_positions[1][h][i_flat], sat_positions[2][h][i_flat],
-                               sat_positions[0][h][j_flat], sat_positions[1][h][j_flat], sat_positions[2][h][j_flat])
-        all_thetas2.append(thetas)
-        Li, Lj = L[h][i_flat, :], L[h][j_flat, :]
-        dots = np.sum(Li * Lj, axis=1)  # a value for each satellite, but want a single value for entire halo???
-        corot2.append(thetas[dots > 0])
-        antirot2.append(thetas[dots < 0])
-        if sample[h] == True:
-            samples2.append(thetas)
-            corot_samples2.append(thetas[dots > 0])
-            antirot_sample2s.append(thetas[dots < 0])
-        host_ids2.append(h)
-    labelz2 = ['all', 'corot', 'antirot', 'similarity percentile', 'similarity corot', 'similarity antirot']
-    anglez2 = [np.hstack(all_thetas2), np.hstack(corot2), np.hstack(antirot2), np.hstack(samples2),
-              np.hstack(corot_samples2), np.hstack(antirot_samples2)]
-    centerz2 = []
-    pdenz2 = []
-    for a in anglez2:
-        N, theta_edges = np.histogram(a, range=(0, np.pi), bins=bins)
-        bin_size = np.pi / bins
-        p_density = N / np.sum(N) / bin_size
-        theta_centers = (theta_edges[1:] + theta_edges[:-1]) / 2
-        sin_theta = np.sin(theta_centers) / 2
-        scaled_pdensity = p_density / sin_theta
-        centerz2.append(theta_centers)
-        pdenz2.append(scaled_pdensity)
-
-    N_loops = 10000
-    ps, _ = lilliefors(host_ids2, all_thetas2, samples2, N_loops)
-    pc, _ = lilliefors(host_ids2, corot2, corot_samples2, N_loops)
-    pa, _ = lilliefors(host_ids2, antirot2, antirot_samples2, N_loops)
-
-    fig, ax = plt.subplots(figsize=(10, 10), dpi=75, tight_layout=False)
-    ax.plot(centerz2[0], pdenz2[0], label=r'all $\theta_{open}$')
-    ax.plot(centerz2[1], pdenz2[1], label='corotating')
-    ax.plot(centerz2[2], pdenz2[2], label='antirotating')
-    ax.plot(centerz2[3], pdenz2[3], label=str(per)+r' % MW similarity: $p$ = ' + str(round(ps, 2)))
-    #ax.plot(centerz2[3], pdenz2[3], label='top ' + str(per) + r'% in ' + env_labels[0]+': $p$ = ' + str(round(ps, 2)))
-    ax.plot(centerz2[4], pdenz2[4], label=r'corotating in '+str(per)+'%: $p$ = ' + str(round(pc, 2)))
-    ax.plot(centerz2[5], pdenz2[5], label=r'antirotating in '+str(per)+'%: $p$ = ' + str(round(pa, 2)))
-    ax.plot()
-    ax.axhline(y=1, color='black', lw=0.8, linestyle='--', label='expected spherical dist')
-    ax.axhline(y=0, color='white', lw=0.8, linestyle='--', label='bins: '+str(bins))
-    ax.axhline(y=0, color='white', lw=0.8, linestyle='--', label='similarity computed on: '+str(similarity_labels))
-    #fig.suptitle('CDFs of Angular Separation Between Satellite Pairs in Erebos_CBol_L63 selected on Percentiles of Similarity to MW')
-    fig.suptitle(r'CDFs of Angular Separation Between Satellite Pairs in Erebos_CBol_L63 Split on Single Environmental Parameter: $\Delta_{dim}$')
-    ax.set_xlabel(r'Opening angle $\theta_{open}$ [rad]')
-    ax.set_ylabel(r'$N_{\theta_{open}}\ /\ N_{tot}\ /\ d(\theta_{open})/\ sin(\theta)$')
-    ax.set_ylim(0.75, np.pi)
-    ax.axis('square')
-    ax.legend()
-    plt.show()"""
-
-    print('done')
-
 
 def random_sphere(N):
     """ random_sphere returns the azimuthal angle, phi, and polar angle, theta
@@ -1462,66 +1382,99 @@ def random_ellipsoid(N, a, b, c):
     x, y, z = random_ball(N, 1.0)
     return x * a, y * b, z * c
 
-"""
-N = 500
-def test_sep():
-
-    #x, y, z = random_ellipsoid(N, 25.904750799398368, 21.681969785452043, 19.293134199600996)
-    x, y, z = random_ellipsoid(N, 1, 1, 0.5)
-    #x, y, z = random_ball(N, 1.0)
-    #print('point displacements', x,y,z)
-    d = []
-    for k in range(len(x)):
-        x1 = x[k]
-        y1 = y[k]
-        z1 = z[k]
-        d.append([x1,y1,z1])
-    d = [d]
-    #d = [[[0,0,1],[2,0,0],[0,0,-2]]]
-    sat_sep(d)
-"""
-
-def test_N_sats():
-    # x, y, z are arrays of position values for each random point in the
-    # ellipsoid, relative to its center
-    fig, ax = plt.subplots(figsize=(10, 10), dpi=75)
-    N_points = [5, 10, 15, 20]
-    N_realizations = 100
-    ca_exp = 1
+def create_N_sats_data(ax, a, b, c, j, shape):
+    N_realizations = 1000
+    N_points = [5, 10, 20, 40, 80]
+    colors = ['red', 'green', 'blue', 'purple']
+    ca_exp = c/a
     ca_2d = []
     ca_stds = []
     N_2d = []
+    ca_mean = []
     for n in N_points:
-        ax.plot(n, ca_exp, color='red', marker='x')
         ca_point = []
         N_point = []
         for i in range(N_realizations):
-            x, y, z = random_ellipsoid(n, 1, 1, 1)
+            x, y, z = random_ellipsoid(n, a, b, c)
             ca, ba, _, _ = get_axes(x, y, z, i)
-            ca_point.append(ca/ca_exp)
+            ca_point.append(ca)
             N_point.append(n)
         ca_2d.append(ca_point)
         ca_stds.append(np.std(ca_point))
+        ca_mean.append(np.mean(ca_point))
         N_2d.append(N_point)
+    ax.axhline(y=ca_exp, color='black', lw=0.8, linestyle='--', label=r'$c/a_{expected}$ for ' + str(shape))
+    ax.errorbar(N_points, ca_mean, yerr=ca_stds, color=colors[j], ecolor='black', xerr=None, ls='none', label=r'$c/a_{recovered}$')
+    ax.scatter(N_points, ca_mean, color=colors[j], marker='x', label=r'$c/a_{mean}$')
+    ax.set_xscale('log')
+    ax.legend()
+    ax.set_ylim(0,1.1)
 
-    ax.scatter(N_2d, ca_2d)
-    plt.errorbar(N_2d, ca_2d, ecolor='pink', yerr=ca_stds, xerr=None, ls='none')
-    ax.set_xlabel(r'$N_{points}$')
-    ax.set_ylabel(r'$(c/a)\ / \ (c/a_{expected})$')
+
+def test_N_sats():
+    fig, ax = plt.subplots(2,2, figsize=(10, 10), dpi=75)
+    N_realizations = 1000
+    create_N_sats_data(ax[0][0], 1, 1, 1, 0, 'sphere')   # sphere
+    create_N_sats_data(ax[0][1], 1, 0.5, 0.5, 1, 'prolate ellipsoid')  # prolate, small axes similar
+    create_N_sats_data(ax[1][0], 1, 1, 0.75, 2, 'oblate ellipsoid')   # oblate, big axes similar
+    create_N_sats_data(ax[1][1], 1, 0.75, 0.75, 3, 'prolate ellipsoid') # prolate, small axes similar
+
+    ax[1][0].set_xlabel(r'$N_{points}$')
+    ax[1][1].set_xlabel(r'$N_{points}$')
+    ax[0][0].set_ylabel(r'$(c/a_{recovered})\ / \ (c/a_{expected})$')
+    ax[1][0].set_ylabel(r'$(c/a_{recovered})\ / \ (c/a_{expected})$')
     fig.suptitle(r'Axis Ratio Recovery for Various $N_{sats}$ Done With ' + str(N_realizations) + ' Point Realizations')
     plt.show()
-    """
-    x, y, z = random_ellipsoid(N, 1, 1, 0.5)
-    ca_exp = 0.5
-    x, y, z = random_ellipsoid(N, 1, 0.5, 0.5)
-    ca_exp = 0.5
-    x, y, z = random_ellipsoid(N, 1, 1, 0.75)
-    ca_exp = 0.75
-    x, y, z = random_ellipsoid(N, 1, 0.75, 0.75)
-    ca_exp = 0.75
-    """
 
 
+def points_sep_plots(n, a, b, c, ax, labelx, labely, bins, color):
+    all_pdensities = []
+    for r in range(1000):
+        x, y, z = random_ellipsoid(n, a, b, c)
+        idx = np.arange(len(x))
+        i, j = idx, idx
+        i_grid, j_grid = np.meshgrid(i, j)
+        i_flat, j_flat = i_grid.flatten(), j_grid.flatten()
+        valid_pair = j_flat > i_flat
+        i_flat, j_flat = i_flat[valid_pair], j_flat[valid_pair]
+        thetas = opening_angle(x[i_flat], y[i_flat], z[i_flat],
+                               x[j_flat], y[j_flat], z[j_flat])
+        N, theta_edges = np.histogram(thetas, range=(0, np.pi), bins=bins)
+        bin_size = np.pi / bins
+        p_density = N / np.sum(N) / bin_size
+        theta_centers = (theta_edges[1:] + theta_edges[:-1]) / 2
+        sin_theta = np.sin(theta_centers) / 2
+        scaled_pdensity = p_density / sin_theta
+        all_pdensities.append(scaled_pdensity)
+    avg_pdensities = np.average(all_pdensities, axis=0)  #axis=0
+    ax.plot(theta_centers, avg_pdensities, label='test points: ' + str(n), color=color)
+    ax.set_xlabel(labelx, fontsize=10)
+    ax.set_ylabel(labely, fontsize=10)
+    ax.tick_params(axis="x", labelsize=8)
+    ax.tick_params(axis="y", labelsize=8)
+    ax.legend(loc="best")
+
+def points_sep():
+    fig, ax = plt.subplots(figsize=(10, 10), dpi=75, tight_layout=False)
+    a = 1
+    b = 0.5
+    c = 0.25
+    bins=10
+    points_list = [5, 10, 15, 20]
+    colors = ['red', 'green', 'blue', 'purple']
+    labelx = r'Opening angle $\theta_{open}$ [rad]'
+    labely = r'$N_{\theta_{open}}\ /\ N_{tot}\ /\ d(\theta_{open})/\ sin(\theta)$'
+    ax.axhline(y=1, color='white', lw=0.8, linestyle='', label='a,b,c lengths: ' + str(a) + ', ' + str(b) + ', '+ str(c))
+    ax.axhline(y=1, color='black', lw=0.8, linestyle='--', label='expected spherical dist')
+    for p in range(len(points_list)):
+        points_sep_plots(points_list[p], a, b, c, ax, labelx, labely, bins, colors[p])
+    fig.suptitle(r'CDFs of Angular Separation Between Satellite Pair Analogs (test points) in oblate ellipsoid selected on $N_{test points}$')
+    ax.legend(loc="best")
+    plt.show()
+
+
+def mass_tests():
+    print('')
 
 
 if __name__ == '__main__':
