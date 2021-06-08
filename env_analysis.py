@@ -114,11 +114,11 @@ def main():
     m_pairs = [[L63p1, L63p2], [Ep1, Ep2], [Vp1, Vp2], [Sp1, Sp2]]
     thetas = [L63thetas, Ethetas, Vthetas, Sthetas]
     rots = [L63rot, Erot, Vrot, Srot]
-    print(L63rot, Erot)
-    #convergence_all(ids, ds, vs, mvirs, m_pairs, thetas, rots)
-    convergence([L63host_idx, L63sat_host_idx], [L63dx, L63dy, L63dz], [L63vx, L63vy, L63vz], L63sub_mvir, [L63p1, L63p2], L63thetas, L63rot)
+
+    #convergence([L63host_idx, L63sat_host_idx], [L63dx, L63dy, L63dz], [L63vx, L63vy, L63vz], L63sub_mvir, [L63p1, L63p2], L63thetas, L63rot)
     theta_mass([L63p1, L63p2], L63thetas, L63rot)
     new_rot_convergence([L63p1, L63p2], L63thetas, L63rot)
+    convergence_all(ids, ds, vs, mvirs, m_pairs, thetas, rots)
 
     """euc_dist = []
     sim_labels = []
@@ -489,8 +489,16 @@ def theta_and_convergence_plots(selection, ax, limit, ax_title, ids, dict, theta
     select_thetas = thetas[sample]
     corot = thetas[np.where(rot > 0)[0]]
     anti = thetas[np.where(rot < 0)[0]]
-    select_corot = thetas[np.where(rot[sample] > 0)[0]]
-    select_anti = thetas[np.where(rot[sample] < 0)[0]]
+    #select_corot = thetas[np.where(rot[sample] > 0)[0]]
+    #select_anti = thetas[np.where(rot[sample] < 0)[0]]
+    """
+    2 plots that didn't make physical sense/unconsistent: fcorot vs. Mmin to pair-based fcorot
+    change Mmin cutoffs and examine smallest mass pair values in sim, notice unreasonable jump
+    step through function: does each make sense?
+    FIND BUG!
+    """
+    select_corot = select_thetas[rot[sample] > 0]
+    select_anti = select_thetas[rot[sample] < 0]
     #print(len(all_thetas), len(corot), len(anti), len(select_thetas), len(select_corot), len(select_anti))
     angles = [all_thetas, corot, anti, select_thetas, select_corot, select_anti]
     centers, pdens = theta_xy(angles)
@@ -581,17 +589,22 @@ def theta_env_MW(hosts, MW, env, thetas, rot, kind):
     fig.legend(handles=[line1, line2, line3, line4, line5, line6, line7], fontsize=10)
     plt.show()
 
+
 ##### differences????
 def theta_mass(mvir_pairs, thetas, rot):
     fig, axs = plt.subplots(1, 3, figsize=(10, 10), dpi=75, tight_layout=False)
     i = 0
-    lower_limits = [1e8, 1e9, 1e10]
+    lower_limits = [1e9, 1e10, 1e11]
     ytitle = True
     xtitle = True
     dict = {}
     for ax in axs:
+        print()
+        print("i", i)
         if i == 1 or i == 2:
             ytitle = False
+        if i == 2:
+            print(np.sum(mvir_pairs[1] < lower_limits[i]))
         theta_and_convergence_plots([mvir_pairs[0], mvir_pairs[1]], ax, lower_limits[i], [xtitle, ytitle],
                     [None, None], dict, thetas, rot, 'mass')
         i += 1
@@ -725,7 +738,7 @@ def convergence_all(ids, disps, vels, mvirs, mvir_pairs, thetas, rot):
         ax.plot(x2, y[p][2], color=c[2], label="VSMDPL")
         ax.plot(x3, y[p][3], color=c[3], label="SMDPL")
         ax.set_xscale("log")
-        ax.set_ylim(1, 3.5) #!!!!
+        #ax.set_ylim(1, 3.5) #!!!!
         ax.set_xlabel(r'$M_{min}$')
         ax.set_ylabel(y_labels[p])
         if p == 2:
